@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DetourZero — Optimiseur de tournée (client-side)</title>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+
+</head>
+
+<body>
+    <header>
+        <div class="logo"></div>
+        <h1>DetourZero — Optimiseur de tournée</h1>
+        <span class="tag">100% client-side · OSRM · Nominatim</span>
+    </header>
+
+    <main class="wrap">
+        <section class="panel">
+            <div class="row">
+                <label for="addr">Ajouter une adresse (départ = première adresse que tu ajoutes)</label>
+                <div class="row2">
+                    <input id="addr" placeholder="Ex: 5 Rue de l'Église, 62570 Helfaut" />
+                    <button class="btn" id="add">+ Ajouter</button>
+                </div>
+
+                <div class="hstack">
+                    <button class="btn ghost" id="sample">Exemple</button>
+                    <button class="btn ghost" id="clear">Vider</button>
+                </div>
+
+                <div class="muted">
+                    Tu peux ajouter jusqu'à 100 adresses. Clique ensuite « Géocoder », puis « Optimiser ».
+                </div>
+            </div>
+
+            <div class="row hstack">
+                <button class="btn" id="geocode">1) Géocoder</button>
+                <button class="btn primary" id="optimize" disabled>2) Optimiser</button>
+                <button class="btn accent" id="draw" disabled>3) Tracer sur la carte</button>
+            </div>
+
+            <div class="row">
+                <label>Étapes</label>
+                <div class="list" id="list"></div>
+
+                <div class="summary">
+                    <div class="sum" id="sumDist">Distance totale : –</div>
+                    <div class="sum" id="sumTime">Durée totale (≈) : –</div>
+                </div>
+
+                <div class="hstack" style="margin-top:8px">
+                    <button class="btn" id="gmaps" disabled>Ouvrir dans Google Maps</button>
+                    <button class="btn" id="gpx" disabled>Exporter GPX</button>
+                    <button class="btn danger" id="reset">Réinitialiser</button>
+                </div>
+            </div>
+
+            <div class="muted">
+                Astuce : clique sur ✎ pour éditer une adresse ou sur 🗑 pour la retirer avant de géocoder.
+            </div>
+        </section>
+
+        <section>
+            <div id="map"></div>
+        </section>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        // --------- Shortcuts ----------
+        const $ = (s) => document.querySelector(s);
+        const el = {
+            addr: $('#addr'), add: $('#add'), sample: $('#sample'), clear: $('#clear'), list: $('#list'),
+            geocode: $('#geocode'), optimize: $('#optimize'), draw: $('#draw'),
+            gmaps: $('#gmaps'), gpx: $('#gpx'), reset: $('#reset'),
+            sumDist: $('#sumDist'), sumTime: $('#sumTime')
+        };
+
+        // --------- Data/state ----------
+        let raw = []; // strings (adresses tapées)
+        let points = []; // [{name,lat,lon,display}]
+        let ordered = []; // ordre optimisé
+        let routeGeo = null;
+
+        // --------- Map ----------
+        const map = L.map('map').setView([48.8566, 2.3522], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19, attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+        const group = L.layerGroup().addTo(map);
+        const routeLayer = L.geoJSON(null).addTo(map);
+
+        function fitTo(arr) {
+            if (!arr.length) return;
+            map.fitBounds(L.latLngBounds(arr.map(p => [p.lat, p.lon])), { padding: [28, 28] });
+        }
+        function resetMap() { group.clearLayers(); routeLayer.clearLayers(); }
+
+        // --------- UI list ----------
+        function renderList() {
+            el.list.innerHTML = '';
+            raw.forEach((t, i) => {
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                const idx = document.createElement('div');
+                idx.className = 'idx';
+                idx.textContent = i;
+
+                const txt = document.createElement('div');
+                txt.className = 'txt';
+                txt.textContent = t;
+
+                const edit = document.createElement('button');
+                edit.className = 'iconbtn';
+                edit.title = 'Éditer';
+                edit.textContent = '✎';
+                edit.onclick = () => {
+                    const nv = prompt("Modifier l'adresse :", raw[i]);
+                    if (nv !== null && nv.trim()) { raw[i] = nv.trim(); renderList(); }
+                };
+
+                const del = document.createElement('button');
+                del.className = 'iconbtn';
+                del.title = 'Supprimer';
+                del.textContent = '🗑';
+                del.onclick = () => { raw.splice(i, 1); renderList(); };
+
+                card.append(idx, txt, edit, del);
+                el.list.appendChild(card);
+            });
+        }
+
+        el.add.onclick = () => {
+            const v = el.addr.value.trim(); if (!v) return;
+            if (raw.length >= 100) { alert('Limite 100 adresses.'); return; }
+            raw.push(v); el.addr.value = ''; renderList();
+        };
+        el.addr.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); el.add.click(); }
+        });
+
+        el.sample.onclick = () => {
+            raw = [
+                "Dépôt, 5 Rue de l'Église, 62570 Helfaut",
+                "12 Rue de Dunkerque, 62500 Saint-Omer",
+                "19 Avenue Foch, 62380 Lumbres",
+                "Rue Saint-Bertin, 62500 Saint-Omer",
+                "Rue du Rivage, 62380 Wizernes"
+            ];
+            renderList();
+        };
+        el.clear.onclick = () => { raw = []; renderList(); };
+
+        // --------- Geocoding ----------
+        async function geocodeAll(lines) {
+            const out = [];
+            for (const q of lines) {
+                const s = q.trim(); if (!s) continue;
+
+                // lat,lon direct
+                const m = s.match(/(-?\d+\.?\d*)[,; ]+(-?\d+\.?\d*)/);
+                if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) {
+                    out.push({ name: q, lat: +m[1], lon: +m[2] });
+                    continue;
+                }
+
+                const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(s)}&limit=1&accept-language=fr`;
+                const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                if (!r.ok) throw new Error('Géocodage indisponible');
+                const data = await r.json();
+                if (!data.length) throw new Error('Adresse introuvable : ' + s);
+                const { lat, lon, display_name } = data[0];
+                out.push({ name: q, lat: +lat, lon: +lon, display: display_name });
+
+                // petit délai pour respecter Nominatim
+                await new Promise(res => setTimeout(res, 220));
+            }
+            return out;
+        }
+
+        el.geocode.onclick = async () => {
+            try {
+                if (raw.length < 2) { alert('Ajoute au moins le dépôt + 1 adresse.'); return; }
+                resetAll(false);
+                points = await geocodeAll(raw);
+                resetMap();
+                points.forEach((p, i) => group.addLayer(
+                    L.marker([p.lat, p.lon]).bindPopup(`<b>${i === 0 ? 'Dépôt' : ''} ${i}</b><br>${(p.display || p.name)}`)
+                ));
+                fitTo(points);
+                el.optimize.disabled = false; el.draw.disabled = true; el.gmaps.disabled = true; el.gpx.disabled = true;
+            } catch (e) { alert(e.message || e); }
+        };
+
+        // --------- OSRM matrix ----------
+        async function osrmTable(pts) {
+            const coords = pts.map(p => `${p.lon},${p.lat}`).join(';');
+            const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=duration,distance`;
+            const r = await fetch(url);
+            if (!r.ok) throw new Error('OSRM table indisponible');
+            return r.json(); // {durations, distances}
+        }
+
+        // --------- TSP: Nearest Neighbor + 2-Opt ----------
+        function nearestNeighbor(d) {
+            const n = d.length, used = Array(n).fill(false), path = [0]; used[0] = true;
+            for (let k = 1; k < n; k++) {
+                let last = path[path.length - 1], best = -1, cost = 1e18;
+                for (let j = 1; j < n; j++) if (!used[j] && d[last][j] < cost) { cost = d[last][j]; best = j; }
+                path.push(best); used[best] = true;
+            }
+            return path;
+        }
+        function twoOpt(path, d) {
+            const n = path.length; const cost = (a, b) => d[a][b];
+            let improved = true;
+            while (improved) {
+                improved = false;
+                for (let i = 1; i < n - 2; i++) {
+                    for (let k = i + 1; k < n - 1; k++) {
+                        const a = path[i - 1], b = path[i], c = path[k], e = path[k + 1];
+                        const delta = (cost(a, c) + cost(b, e)) - (cost(a, b) + cost(c, e));
+                        if (delta < -1e-6) {
+                            path.splice(i, k - i + 1, ...path.slice(i, k + 1).reverse());
+                            improved = true;
+                        }
+                    }
+                }
+            }
+            return path;
+        }
+        function minsToStr(mins) {
+            const m = Math.round(mins); const h = Math.floor(m / 60), mm = m % 60;
+            return h ? `${h} h ${mm.toString().padStart(2, '0')} min` : `${mm} min`;
+        }
+
+        el.optimize.onclick = async () => {
+            try {
+                if (points.length < 2) return;
+                const matrix = await osrmTable(points);
+                const dur = matrix.durations.map(row => row.map(x => (x ?? 1e9) / 60)); // minutes
+
+                let path = nearestNeighbor(dur);
+                path = twoOpt(path, dur);
+                path.push(0); // retour dépôt
+
+                ordered = path.map(i => points[i]);
+
+                let mins = 0, km = 0;
+                for (let i = 0; i < path.length - 1; i++) {
+                    mins += dur[path[i]][path[i + 1]];
+                    km += (matrix.distances ? matrix.distances[path[i]][path[i + 1]] / 1000 : 0);
+                }
+                el.sumTime.textContent = `Durée totale (≈) : ${minsToStr(mins)}`;
+                el.sumDist.textContent = `Distance totale : ${km ? km.toFixed(1) + ' km' : '≈ –'}`;
+
+                // liste ordonnée
+                el.list.innerHTML = '';
+                ordered.forEach((p, idx) => {
+                    const c = document.createElement('div'); c.className = 'card';
+                    const n = document.createElement('div'); n.className = 'idx'; n.textContent = idx;
+                    const t = document.createElement('div'); t.className = 'txt'; t.textContent = p.name;
+                    const m = document.createElement('div'); m.className = 'mini'; m.textContent = idx === 0 ? 'Dépôt' : '';
+                    c.append(n, t, m, document.createElement('div'));
+                    el.list.appendChild(c);
+                });
+
+                el.draw.disabled = false; el.gmaps.disabled = false; el.gpx.disabled = false;
+            } catch (e) { alert(e.message || e); }
+        };
+
+        // --------- Draw route ----------
+        el.draw.onclick = async () => {
+            try {
+                routeLayer.clearLayers();
+                if (!ordered.length) return;
+                const coords = ordered.map(p => `${p.lon},${p.lat}`).join(';');
+                const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+                const r = await fetch(url); if (!r.ok) throw new Error('OSRM route indisponible');
+                const data = await r.json();
+                routeGeo = data.routes[0].geometry;
+                routeLayer.addData(routeGeo);
+                fitTo(ordered);
+            } catch (e) { alert(e.message || e); }
+        };
+
+        // --------- Open in Google Maps ----------
+        el.gmaps.onclick = () => {
+            if (!ordered.length) return;
+            const pts = ordered.map(p => `${p.lat},${p.lon}`);
+            const origin = pts[0], dest = pts[pts.length - 1];
+            const way = pts.slice(1, -1).slice(0, 23).join('|'); // limite de Google
+            const base = 'https://www.google.com/maps/dir/?api=1';
+            const params = new URLSearchParams({ origin, destination: dest, travelmode: 'driving' });
+            if (way) params.set('waypoints', way);
+            window.open(`${base}&${params.toString()}`, '_blank');
+        };
+
+        // --------- Export GPX ----------
+        el.gpx.onclick = () => {
+            if (!ordered.length) return;
+            const coords = routeGeo
+                ? routeGeo.coordinates.map(([lon, lat]) => ({ lat, lon }))
+                : ordered;
+            const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+                `<gpx version="1.1" creator="DetourZero" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+                ` <trk><name>DetourZero</name><trkseg>\n` +
+                coords.map(p => ` <trkpt lat="${p.lat}" lon="${p.lon}"></trkpt>`).join('\n') + "\n" +
+                ` </trkseg></trk>\n</gpx>`;
+            const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'detourzero.gpx';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        };
+
+        // --------- Reset ----------
+        function resetAll(clearInput = true) {
+            points = []; ordered = []; routeGeo = null; resetMap();
+            el.optimize.disabled = true; el.draw.disabled = true; el.gmaps.disabled = true; el.gpx.disabled = true;
+            el.sumDist.textContent = 'Distance totale : –';
+            el.sumTime.textContent = 'Durée totale (≈) : –';
+            if (clearInput) { raw = []; renderList(); }
+        }
+        el.reset.onclick = () => resetAll(true);
+
+        // init
+        renderList();
+    </script>
+</body>
+
+</html>

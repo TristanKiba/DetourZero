@@ -1,0 +1,260 @@
+:root {
+    --bg: #0a0b10;
+    --panel: #0f1220;
+    --soft: #151a2e;
+    --line: #1e2440;
+    --text: #e8eefb;
+    --sub: #9fb3d9;
+    --brand: #7c5cff;
+    --brand2: #22e0a8;
+    --danger: #ff5a7a;
+}
+
+* {
+    box-sizing: border-box
+}
+
+html,
+body {
+    height: 100%
+}
+
+body {
+    margin: 0;
+    background:
+        radial-gradient(1200px 600px at 10% -10%, #11173a 0%, transparent 40%),
+        radial-gradient(900px 600px at 110% 10%, #0b1430 0%, transparent 35%),
+        linear-gradient(180deg, #070810, #0a0b10 60%);
+    color: var(--text);
+    font: 500 16px/1.4 system-ui, Segoe UI, Roboto, Inter, Arial;
+}
+
+/* Header */
+header {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: rgba(10, 11, 16, .65);
+    backdrop-filter: saturate(1.2) blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: conic-gradient(from 0deg, var(--brand), var(--brand2));
+    box-shadow: 0 0 24px #7c5cff44;
+}
+
+h1 {
+    font-size: 15px;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: .3px
+}
+
+.tag {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--sub);
+    border: 1px solid var(--line);
+    padding: 4px 8px;
+    border-radius: 999px;
+}
+
+/* Layout */
+.wrap {
+    padding: 16px;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 420px 1fr;
+    min-height: calc(100vh - 56px);
+}
+
+@media (max-width: 980px) {
+    .wrap {
+        grid-template-columns: 1fr
+    }
+
+    #map {
+        height: 60vh
+    }
+}
+
+/* Panel & form */
+.panel {
+    background: linear-gradient(180deg, #0f1220, #0a0d1a);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px;
+}
+
+label {
+    font-size: 13px;
+    color: var(--sub)
+}
+
+input {
+    width: 100%;
+    border: 1px solid #273058;
+    background: #0a0f1f;
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 12px;
+    outline: none;
+}
+
+input:focus {
+    border-color: #3e4aa0;
+    box-shadow: 0 0 0 3px #7c5cff22
+}
+
+.row {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px
+}
+
+.row2 {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px
+}
+
+/* Buttons */
+.btn {
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, #121735, #0a0d1a);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    letter-spacing: .2px;
+}
+
+.btn:hover {
+    background: #121735
+}
+
+.btn:active {
+    transform: translateY(1px)
+}
+
+.btn.primary {
+    border-color: #3c2fff;
+    background: linear-gradient(180deg, #7c5cff, #3d2cff)
+}
+
+.btn.accent {
+    border-color: #1aa67f;
+    background: linear-gradient(180deg, #22e0a8, #0f6b52)
+}
+
+.btn.ghost {
+    background: transparent
+}
+
+.btn.danger {
+    background: linear-gradient(180deg, #ff7a93, #cc3a57);
+    border-color: #cc3a57
+}
+
+.hstack {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap
+}
+
+/* List */
+.list {
+    display: grid;
+    gap: 8px;
+    max-height: 240px;
+    overflow: auto;
+    margin-top: 8px
+}
+
+.card {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    background: #0a0f1f;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 8px;
+}
+
+.idx {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    font-weight: 800;
+    background: #121735;
+    border: 1px solid #273058;
+    color: #a9b7ff;
+}
+
+.card .txt {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis
+}
+
+.mini {
+    font-size: 12px;
+    color: var(--sub)
+}
+
+.iconbtn {
+    cursor: pointer;
+    border: 0;
+    min-width: 36px;
+    background: #0e1430;
+    border: 1px solid #243064;
+    border-radius: 10px;
+    padding: 6px;
+    color: #c9d4ff;
+}
+
+.iconbtn:hover {
+    background: #141b44
+}
+
+/* Summary & map */
+.summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px
+}
+
+.sum {
+    background: #0a0f1f;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px;
+    font-size: .95rem;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+}
+
+/* Misc */
+.muted {
+    color: var(--sub);
+    font-size: 13px
+}
