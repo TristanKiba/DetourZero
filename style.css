@@ -1,4 +1,5 @@
 :root {
+    /* couleurs */
     --bg: #0a0b10;
     --panel: #0f1220;
     --soft: #151a2e;
@@ -8,6 +9,21 @@
     --brand: #7c5cff;
     --brand2: #22e0a8;
     --danger: #ff5a7a;
+
+    /* typo fluide */
+    --fs-base: clamp(14px, 1.7vw, 16px);
+    --fs-sm: clamp(12px, 1.4vw, 13px);
+    --fs-h1: clamp(15px, 2.2vw, 18px);
+
+    /* rayons & espacements */
+    --r: 12px;
+    --r-lg: 16px;
+    --gap: 16px;
+    --pad: 14px;
+
+    /* carte mobile */
+    --map-mob: 70vh;
+    /* hauteur souhaitée sur mobile */
 }
 
 * {
@@ -26,10 +42,10 @@ body {
         radial-gradient(900px 600px at 110% 10%, #0b1430 0%, transparent 35%),
         linear-gradient(180deg, #070810, #0a0b10 60%);
     color: var(--text);
-    font: 500 16px/1.4 system-ui, Segoe UI, Roboto, Inter, Arial;
+    font: 500 var(--fs-base)/1.45 system-ui, Segoe UI, Roboto, Inter, Arial;
 }
 
-/* Header */
+/* ===== Header ===== */
 header {
     position: sticky;
     top: 0;
@@ -37,7 +53,7 @@ header {
     background: rgba(10, 11, 16, .65);
     backdrop-filter: saturate(1.2) blur(8px);
     border-bottom: 1px solid var(--line);
-    padding: 14px 16px;
+    padding: 12px var(--gap);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -52,7 +68,7 @@ header {
 }
 
 h1 {
-    font-size: 15px;
+    font-size: var(--fs-h1);
     margin: 0;
     font-weight: 700;
     letter-spacing: .3px
@@ -60,19 +76,20 @@ h1 {
 
 .tag {
     margin-left: auto;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     color: var(--sub);
     border: 1px solid var(--line);
     padding: 4px 8px;
     border-radius: 999px;
 }
 
-/* Layout */
+/* ===== Layout ===== */
 .wrap {
-    padding: 16px;
+    padding: var(--gap);
     display: grid;
-    gap: 16px;
+    gap: var(--gap);
     grid-template-columns: 420px 1fr;
+    /* desktop: panneau + carte */
     min-height: calc(100vh - 56px);
 }
 
@@ -81,21 +98,19 @@ h1 {
         grid-template-columns: 1fr
     }
 
-    #map {
-        height: 60vh
-    }
+    /* mobile: une seule colonne */
 }
 
-/* Panel & form */
+/* ===== Panneau / Form ===== */
 .panel {
     background: linear-gradient(180deg, #0f1220, #0a0d1a);
     border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 14px;
+    border-radius: var(--r-lg);
+    padding: var(--pad);
 }
 
 label {
-    font-size: 13px;
+    font-size: var(--fs-sm);
     color: var(--sub)
 }
 
@@ -104,9 +119,11 @@ input {
     border: 1px solid #273058;
     background: #0a0f1f;
     color: var(--text);
-    padding: 10px 12px;
-    border-radius: 12px;
+    padding: 12px 14px;
+    border-radius: var(--r);
     outline: none;
+    min-height: 44px;
+    /* touch-friendly */
 }
 
 input:focus {
@@ -126,16 +143,32 @@ input:focus {
     gap: 10px
 }
 
-/* Buttons */
+.row2 .hstack {
+    align-items: center
+}
+
+@media (max-width:760px) {
+    .row2 {
+        grid-template-columns: 1fr
+    }
+
+    .row2 .hstack {
+        justify-content: stretch
+    }
+}
+
+/* ===== Boutons ===== */
 .btn {
     cursor: pointer;
     border: 1px solid var(--line);
     background: linear-gradient(180deg, #121735, #0a0d1a);
     color: var(--text);
-    padding: 10px 12px;
-    border-radius: 12px;
+    padding: 12px 14px;
+    border-radius: var(--r);
     font-weight: 700;
     letter-spacing: .2px;
+    min-height: 44px;
+    /* cible tactile */
 }
 
 .btn:hover {
@@ -171,13 +204,34 @@ input:focus {
     flex-wrap: wrap
 }
 
-/* List */
+@media (max-width:760px) {
+    .hstack .btn {
+        flex: 1
+    }
+
+    /* boutons en pleine largeur */
+    .hstack .btn.ghost {
+        flex: 0 0 auto
+    }
+
+    /* mais pas les petits ghosts si tu préfères */
+}
+
+/* ===== Liste d’adresses ===== */
 .list {
     display: grid;
     gap: 8px;
     max-height: 240px;
     overflow: auto;
-    margin-top: 8px
+    margin-top: 8px;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width:760px) {
+    .list {
+        max-height: 220px
+    }
 }
 
 .card {
@@ -187,7 +241,7 @@ input:focus {
     align-items: center;
     background: #0a0f1f;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: var(--r);
     padding: 8px;
 }
 
@@ -206,22 +260,23 @@ input:focus {
 .card .txt {
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis
+    text-overflow: ellipsis;
+    min-width: 0
 }
 
 .mini {
-    font-size: 12px;
+    font-size: var(--fs-sm);
     color: var(--sub)
 }
 
 .iconbtn {
     cursor: pointer;
     border: 0;
-    min-width: 36px;
+    min-width: 40px;
     background: #0e1430;
     border: 1px solid #243064;
     border-radius: 10px;
-    padding: 6px;
+    padding: 8px;
     color: #c9d4ff;
 }
 
@@ -229,7 +284,7 @@ input:focus {
     background: #141b44
 }
 
-/* Summary & map */
+/* ===== Résumé & Carte ===== */
 .summary {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -237,24 +292,46 @@ input:focus {
     margin-top: 10px
 }
 
+@media (max-width:480px) {
+    .summary {
+        grid-template-columns: 1fr
+    }
+}
+
 .sum {
     background: #0a0f1f;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: var(--r);
     padding: 10px;
     font-size: .95rem;
 }
 
+/* Carte: grande sur mobile */
 #map {
     width: 100%;
     height: 100%;
-    border-radius: 16px;
+    /* desktop: plein disponible */
+    border-radius: var(--r-lg);
     border: 1px solid var(--line);
     overflow: hidden;
 }
 
-/* Misc */
+@media (max-width:980px) {
+    #map {
+        height: var(--map-mob);
+        /* mobile: grande hauteur visible */
+        min-height: 400px;
+    }
+}
+
+/* ===== Divers ===== */
 .muted {
     color: var(--sub);
-    font-size: 13px
+    font-size: var(--fs-sm)
 }
+
+#scan {
+    border-radius: 999px;
+}
+
+/* bouton caméra arrondi */

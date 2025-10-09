@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 
+    <!-- OCR (local, côté navigateur) -->
+    <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 
 <body>
@@ -23,9 +25,15 @@
         <section class="panel">
             <div class="row">
                 <label for="addr">Ajouter une adresse (départ = première adresse que tu ajoutes)</label>
+
                 <div class="row2">
                     <input id="addr" placeholder="Ex: 5 Rue de l'Église, 62570 Helfaut" />
-                    <button class="btn" id="add">+ Ajouter</button>
+                    <div class="hstack">
+                        <button class="btn" id="scan">📷 Scanner</button>
+                        <button class="btn" id="add">+ Ajouter</button>
+                    </div>
+                    <!-- input caché pour ouvrir la caméra sur mobile -->
+                    <input id="fileCam" type="file" accept="image/*" capture="environment" style="display:none" />
                 </div>
 
                 <div class="hstack">
@@ -34,7 +42,7 @@
                 </div>
 
                 <div class="muted">
-                    Tu peux ajouter jusqu'à 100 adresses. Clique ensuite « Géocoder », puis « Optimiser ».
+                    Tu peux ajouter jusqu'à <b>150 adresses</b>. Clique ensuite « Géocoder », puis « Optimiser ».
                 </div>
             </div>
 
@@ -76,7 +84,8 @@
         // --------- Shortcuts ----------
         const $ = (s) => document.querySelector(s);
         const el = {
-            addr: $('#addr'), add: $('#add'), sample: $('#sample'), clear: $('#clear'), list: $('#list'),
+            addr: $('#addr'), add: $('#add'), scan: $('#scan'), fileCam: $('#fileCam'),
+            sample: $('#sample'), clear: $('#clear'), list: $('#list'),
             geocode: $('#geocode'), optimize: $('#optimize'), draw: $('#draw'),
             gmaps: $('#gmaps'), gpx: $('#gpx'), reset: $('#reset'),
             sumDist: $('#sumDist'), sumTime: $('#sumTime')
@@ -137,15 +146,17 @@
             });
         }
 
+        // Ajout manuel
         el.add.onclick = () => {
             const v = el.addr.value.trim(); if (!v) return;
-            if (raw.length >= 100) { alert('Limite 100 adresses.'); return; }
+            if (raw.length >= 150) { alert('Limite 150 adresses.'); return; }
             raw.push(v); el.addr.value = ''; renderList();
         };
         el.addr.addEventListener('keydown', e => {
             if (e.key === 'Enter') { e.preventDefault(); el.add.click(); }
         });
 
+        // Exemple & vider
         el.sample.onclick = () => {
             raw = [
                 "Dépôt, 5 Rue de l'Église, 62570 Helfaut",
@@ -157,6 +168,76 @@
             renderList();
         };
         el.clear.onclick = () => { raw = []; renderList(); };
+
+        // --------- OCR via caméra ----------
+        el.scan.onclick = () => el.fileCam.click();
+
+        el.fileCam.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            try {
+                const oldPh = el.addr.placeholder;
+                el.addr.placeholder = "Analyse de l'image en cours…";
+
+                // Lire l'image en dataURL
+                const dataURL = await new Promise((res, rej) => {
+                    const fr = new FileReader();
+                    fr.onload = () => res(fr.result);
+                    fr.onerror = (err) => rej(err);
+                    fr.readAsDataURL(file);
+                });
+
+                // OCR (fr + en)
+                const { data } = await Tesseract.recognize(dataURL, 'fra+eng', {
+                    tessedit_pageseg_mode: 6,
+                });
+
+                const rawText = (data.text || '')
+                    .replace(/\r/g, '')
+                    .split('\n')
+                    .map(s => s.trim())
+                    .filter(Boolean);
+
+                const voieRegex = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier|lotissement|résidence|residence)\b/i;
+                const cpRegex = /\b\d{5}\b/;
+
+                let best = '';
+                for (let i = 0; i < rawText.length; i++) {
+                    const line = rawText[i];
+                    const next = rawText[i + 1] || '';
+                    const joined = `${line}, ${next}`.replace(/\s{2,}/g, ' ').trim();
+
+                    if (cpRegex.test(line) || voieRegex.test(line)) { best = line; break; }
+                    if (cpRegex.test(joined) || voieRegex.test(joined)) { best = joined; break; }
+                }
+                if (!best) best = rawText.sort((a, b) => b.length - a.length)[0] || '';
+
+                best = best
+                    .replace(/\b(tel|tél|phone|portable|gsm)\b.*$/i, '')
+                    .replace(/\s{2,}/g, ' ')
+                    .trim();
+
+                if (!best) {
+                    alert("Je n'ai pas réussi à détecter une adresse lisible. Réessaie avec une photo plus nette.");
+                    el.addr.placeholder = oldPh; e.target.value = ''; return;
+                }
+
+                if (confirm(`Ajouter cette adresse ?\n\n${best}`)) {
+                    el.addr.value = best;
+                    el.add.click();
+                } else {
+                    el.addr.value = best;
+                }
+
+                el.addr.placeholder = oldPh;
+                e.target.value = '';
+            } catch (err) {
+                console.error(err);
+                alert("Erreur pendant l'analyse. Réessaie avec une photo nette (bonne lumière, étiquette à plat).");
+                e.target.value = '';
+            }
+        });
 
         // --------- Geocoding ----------
         async function geocodeAll(lines) {
