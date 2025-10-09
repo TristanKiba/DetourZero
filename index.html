@@ -169,72 +169,150 @@
         };
         el.clear.onclick = () => { raw = []; renderList(); };
 
-        // --------- OCR via caméra ----------
+        // --------- OCR via caméra (amélioré) ----------
         el.scan.onclick = () => el.fileCam.click();
+
+        async function preprocessImageToDataURL(file) {
+            const img = await new Promise((res, rej) => {
+                const url = URL.createObjectURL(file);
+                const im = new Image();
+                im.onload = () => res(im);
+                im.onerror = rej;
+                im.src = url;
+            });
+
+            const MAX_W = 1800;
+            const scale = Math.min(1, MAX_W / img.width);
+            const w = Math.round(img.width * scale);
+            const h = Math.round(img.height * scale);
+
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+
+            const id = ctx.getImageData(0, 0, w, h);
+            const d = id.data;
+            const contrast = 1.2;
+            for (let i = 0; i < d.length; i += 4) {
+                const r = d[i], g = d[i + 1], b = d[i + 2];
+                let y = 0.299 * r + 0.587 * g + 0.114 * b; // luminance
+                y = ((y - 128) * contrast) + 128;
+                y = Math.max(0, Math.min(255, y));
+                const thr = 160;
+                const v = y > thr ? 255 : 0;
+                d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+            }
+            ctx.putImageData(id, 0, 0);
+            return c.toDataURL('image/png');
+        }
+
+        function pickBestAddressCandidates(lines) {
+            const voie = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier|lotissement|résidence|residence)\b/i;
+            const cp = /\b\d{5}\b/;
+            const cityHint = /\b(paris|lyon|marseille|lille|roubaix|tourcoing|bordeaux|toulouse|nantes|nice|rennes|reims|dijon|angers|tours|strasbourg|metz|nancy)\b/i;
+
+            const cleaned = lines
+                .map(s => s.replace(/\s{2,}/g, ' ').replace(/[|]/g, 'I').trim())
+                .filter(Boolean);
+
+            const candidates = [];
+            for (let i = 0; i < cleaned.length; i++) {
+                const a = cleaned[i];
+                const b = cleaned[i + 1] ? `${cleaned[i]}, ${cleaned[i + 1]}` : cleaned[i];
+
+                const scoreLine = (t) =>
+                    (voie.test(t) ? 3 : 0) + (cp.test(t) ? 3 : 0) + (cityHint.test(t) ? 1 : 0) + Math.min(2, Math.floor(t.length / 20));
+
+                candidates.push({ text: a, score: scoreLine(a) });
+                if (b !== a) candidates.push({ text: b, score: scoreLine(b) });
+            }
+
+            const uniq = [];
+            const seen = new Set();
+            candidates
+                .filter(c => c.score > 0)
+                .sort((x, y) => y.score - x.score)
+                .forEach(c => {
+                    const k = c.text.toLowerCase();
+                    if (!seen.has(k)) { seen.add(k); uniq.push(c); }
+                });
+
+            if (!uniq.length) {
+                cleaned.sort((a, b) => b.length - a.length).slice(0, 3).forEach(t => uniq.push({ text: t, score: 1 }));
+            }
+            return uniq.slice(0, 6);
+        }
+
+        function showOcrPicker(cands) {
+            const wrap = document.createElement('div');
+            wrap.className = 'ocr-modal';
+            wrap.innerHTML = `
+        <div class="ocr-card">
+          <div class="ocr-title">Sélectionne l'adresse détectée</div>
+          <div class="ocr-list"></div>
+          <div class="ocr-actions">
+            <button class="btn ghost" id="ocr-cancel">Annuler</button>
+          </div>
+        </div>`;
+            document.body.appendChild(wrap);
+
+            const list = wrap.querySelector('.ocr-list');
+            cands.forEach(c => {
+                const btn = document.createElement('button');
+                btn.className = 'btn ocr-choice';
+                btn.textContent = c.text;
+                btn.onclick = () => {
+                    el.addr.value = c.text;
+                    el.add.click();
+                    document.body.removeChild(wrap);
+                };
+                list.appendChild(btn);
+            });
+            wrap.querySelector('#ocr-cancel').onclick = () => document.body.removeChild(wrap);
+        }
 
         el.fileCam.addEventListener('change', async (e) => {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
-
             try {
                 const oldPh = el.addr.placeholder;
-                el.addr.placeholder = "Analyse de l'image en cours…";
+                el.addr.placeholder = "Analyse de l'image…";
 
-                // Lire l'image en dataURL
-                const dataURL = await new Promise((res, rej) => {
-                    const fr = new FileReader();
-                    fr.onload = () => res(fr.result);
-                    fr.onerror = (err) => rej(err);
-                    fr.readAsDataURL(file);
+                const dataURL = await preprocessImageToDataURL(file);
+
+                const worker = await Tesseract.createWorker('fra+eng', 1, { logger: m => console.log(m) });
+                await worker.setParameters({
+                    tessedit_pageseg_mode: 4,
+                    preserve_interword_spaces: '1',
+                    user_defined_dpi: '300',
+                    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÏÎÔÖÙÛÜŸabcdefghijklmnopqrstuvwxyzàâäçéèêëïîôöùûüÿ0123456789 ,.'-/"
                 });
 
-                // OCR (fr + en)
-                const { data } = await Tesseract.recognize(dataURL, 'fra+eng', {
-                    tessedit_pageseg_mode: 6,
-                });
+                const { data } = await worker.recognize(dataURL);
+                await worker.terminate();
 
-                const rawText = (data.text || '')
+                const lines = (data.text || '')
                     .replace(/\r/g, '')
                     .split('\n')
                     .map(s => s.trim())
                     .filter(Boolean);
 
-                const voieRegex = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier|lotissement|résidence|residence)\b/i;
-                const cpRegex = /\b\d{5}\b/;
-
-                let best = '';
-                for (let i = 0; i < rawText.length; i++) {
-                    const line = rawText[i];
-                    const next = rawText[i + 1] || '';
-                    const joined = `${line}, ${next}`.replace(/\s{2,}/g, ' ').trim();
-
-                    if (cpRegex.test(line) || voieRegex.test(line)) { best = line; break; }
-                    if (cpRegex.test(joined) || voieRegex.test(joined)) { best = joined; break; }
-                }
-                if (!best) best = rawText.sort((a, b) => b.length - a.length)[0] || '';
-
-                best = best
-                    .replace(/\b(tel|tél|phone|portable|gsm)\b.*$/i, '')
-                    .replace(/\s{2,}/g, ' ')
-                    .trim();
-
-                if (!best) {
-                    alert("Je n'ai pas réussi à détecter une adresse lisible. Réessaie avec une photo plus nette.");
-                    el.addr.placeholder = oldPh; e.target.value = ''; return;
-                }
-
-                if (confirm(`Ajouter cette adresse ?\n\n${best}`)) {
-                    el.addr.value = best;
+                const cands = pickBestAddressCandidates(lines);
+                if (!cands.length) {
+                    alert("Adresse non trouvée. Réessaie avec une photo nette et bien éclairée.");
+                } else if (cands.length === 1) {
+                    el.addr.value = cands[0].text;
                     el.add.click();
                 } else {
-                    el.addr.value = best;
+                    showOcrPicker(cands);
                 }
 
                 el.addr.placeholder = oldPh;
                 e.target.value = '';
             } catch (err) {
                 console.error(err);
-                alert("Erreur pendant l'analyse. Réessaie avec une photo nette (bonne lumière, étiquette à plat).");
+                alert("Erreur pendant l'analyse. Réessaie avec une photo nette (lumière, étiquette à plat).");
                 e.target.value = '';
             }
         });
