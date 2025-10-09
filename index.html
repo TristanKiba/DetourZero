@@ -36,6 +36,19 @@
                     <input id="fileCam" type="file" accept="image/*" capture="environment" style="display:none" />
                 </div>
 
+                <!-- 🔽 Proposition OCR sous le champ -->
+                <div id="ocrBox" style="display:none; margin-top:10px;">
+                    <div class="card" style="grid-template-columns:1fr auto auto;">
+                        <div class="txt" id="ocrText"></div>
+                        <button class="btn" id="ocrAdd">Ajouter</button>
+                        <button class="btn ghost" id="ocrEdit">Corriger</button>
+                    </div>
+                    <div class="hstack" style="margin-top:8px;">
+                        <button class="btn ghost" id="ocrToggle">Autres propositions</button>
+                    </div>
+                    <div id="ocrAlt" class="list" style="display:none; margin-top:8px;"></div>
+                </div>
+
                 <div class="hstack">
                     <button class="btn ghost" id="sample">Exemple</button>
                     <button class="btn ghost" id="clear">Vider</button>
@@ -88,7 +101,11 @@
             sample: $('#sample'), clear: $('#clear'), list: $('#list'),
             geocode: $('#geocode'), optimize: $('#optimize'), draw: $('#draw'),
             gmaps: $('#gmaps'), gpx: $('#gpx'), reset: $('#reset'),
-            sumDist: $('#sumDist'), sumTime: $('#sumTime')
+            sumDist: $('#sumDist'), sumTime: $('#sumTime'),
+            // OCR inline
+            ocrBox: $('#ocrBox'), ocrText: $('#ocrText'),
+            ocrAdd: $('#ocrAdd'), ocrEdit: $('#ocrEdit'),
+            ocrToggle: $('#ocrToggle'), ocrAlt: $('#ocrAlt')
         };
 
         // --------- Data/state ----------
@@ -151,6 +168,8 @@
             const v = el.addr.value.trim(); if (!v) return;
             if (raw.length >= 150) { alert('Limite 150 adresses.'); return; }
             raw.push(v); el.addr.value = ''; renderList();
+            // masque la boîte OCR si elle était visible
+            el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none';
         };
         el.addr.addEventListener('keydown', e => {
             if (e.key === 'Enter') { e.preventDefault(); el.add.click(); }
@@ -217,46 +236,53 @@
                 .filter(Boolean);
         }
 
+        // — composant d'adresse : reconstruit RUE + COMPL + CP VILLE
         function extractComponents(lines) {
             const voie = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier)\b/i;
-            const cpCityRE = /\b(\d{5})\b[\s,-]*([A-ZÀÂÄÇÉÈÊËÏÎÔÖÙÛÜŸ][A-Za-zÀ-ÿ' \-]*)/;
+            const cpRE = /\b(\d{5})\b/;
+            const cityRE = /^[A-ZÀÂÄÇÉÈÊËÏÎÔÖÙÛÜŸ][A-Za-zÀ-ÿ' \-]+$/;
+
+            // 1) Street (ligne contenant un type de voie)
+            let street = '';
+            for (const ln of lines) {
+                if (voie.test(ln)) { street = ln.replace(/[,.;]+$/, '').trim(); break; }
+            }
+
+            // 2) Complement (appt, bât, etc.) — cherche autour
             const complRE = /\b(appt|appartement|bât|bat|bâtiment|étage|etage|esc|escalier|porte|lot|bp|résidence|residence|immeuble|entrée)\b[\w\- ]*/i;
-
-            let cp = '', city = '', cpLineIdx = -1;
-            lines.forEach((ln, i) => {
-                const m = ln.match(cpCityRE);
-                if (m && m[1] && m[2] && cpLineIdx === -1) {
-                    cp = m[1];
-                    city = m[2].replace(/[,.;]+$/, '').trim();
-                    cpLineIdx = i;
-                }
-            });
-
-            let street = '', streetIdx = -1;
-            lines.forEach((ln, i) => {
-                if (voie.test(ln)) {
-                    street = ln.replace(/[,.;]+$/, '').trim();
-                    streetIdx = i;
-                }
-            });
-
             let complement = '';
-            const look = [streetIdx + 1, streetIdx - 1, cpLineIdx - 1, cpLineIdx + 1]
-                .filter(i => i >= 0 && i < lines.length);
-            for (const i of look) {
+            for (let i = 0; i < lines.length; i++) {
                 const ln = lines[i];
-                const m = ln.match(complRE);
+                if (complRE.test(ln)) { complement = ln.replace(/[,.;]+$/, '').trim(); break; }
+            }
+
+            // 3) CP + Ville (peut être sur une ou deux lignes)
+            let cp = '', city = '';
+            for (let i = 0; i < lines.length; i++) {
+                const ln = lines[i];
+                const m = ln.match(cpRE);
                 if (m) {
-                    complement = ln.replace(/[,.;]+$/, '').trim();
+                    cp = (m[1] || '').replace(/[Oo]/g, '0');
+                    // le reste de la ligne après le CP
+                    let tail = ln.slice(m.index + m[0].length).replace(/^[\s,;-]+/, '').trim();
+                    if (cityRE.test(tail)) {
+                        city = tail;
+                    } else {
+                        // sinon, regarde la ligne suivante si elle ressemble à une ville
+                        const next = lines[i + 1] ? lines[i + 1].trim() : '';
+                        if (cityRE.test(next)) city = next.replace(/[,.;]+$/, '').trim();
+                    }
                     break;
                 }
             }
 
-            if (cp && cp.length === 5) cp = cp.replace(/[Oo]/g, '0');
-
             let full = '';
             if (street && cp && city) {
                 full = complement ? `${street}, ${complement}, ${cp} ${city}` : `${street}, ${cp} ${city}`;
+            } else if (street && cp) { // fallback
+                full = complement ? `${street}, ${complement}, ${cp}` : `${street}, ${cp}`;
+            } else if (street) {
+                full = complement ? `${street}, ${complement}` : street;
             }
             return { street, complement, cp, city, full };
         }
@@ -265,75 +291,84 @@
             const { street, complement, cp, city, full } = extractComponents(lines);
             const out = [];
             if (full) out.push({ text: full, kind: 'full' });
-            if (street) out.push({ text: street, kind: 'street' });
-            if (complement) out.push({ text: complement, kind: 'compl' });
+            if (street && cp && !city) out.push({ text: `${street}, ${cp}`, kind: 'partial' });
+            if (street && complement) out.push({ text: `${street}, ${complement}`, kind: 'partial' });
             if (cp && city) out.push({ text: `${cp} ${city}`, kind: 'cpcity' });
+            if (street) out.push({ text: street, kind: 'street' });
 
+            // 1–2 combinaisons voisines au cas où
             lines.forEach((ln, i) => {
                 if (i < lines.length - 1) {
                     const joined = `${ln}, ${lines[i + 1]}`.replace(/\s{2,}/g, ' ').trim();
-                    if (!out.find(o => o.text.toLowerCase() === joined.toLowerCase()))
-                        out.push({ text: joined, kind: 'joined' });
+                    out.push({ text: joined, kind: 'joined' });
                 }
             });
 
+            // dédoublonne
             const seen = new Set();
             const uniq = out.filter(o => {
                 const k = o.text.toLowerCase();
                 if (seen.has(k)) return false;
                 seen.add(k); return true;
             });
-            return uniq.slice(0, 6);
+
+            // tri : full d'abord, puis partial, puis le reste
+            const rank = { full: 0, partial: 1, cpcity: 2, street: 3, joined: 4 };
+            uniq.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
+            return uniq.slice(0, 8);
         }
 
-        function showOcrPicker(cands) {
-            const wrap = document.createElement('div');
-            wrap.className = 'ocr-modal';
-            wrap.innerHTML = `
-        <div class="ocr-card">
-          <div class="ocr-title">Sélectionne l'adresse détectée</div>
-          <div class="ocr-list"></div>
-          <div class="ocr-actions">
-            <button class="btn ghost" id="ocr-edit">Corriger avant ajout</button>
-            <button class="btn ghost" id="ocr-cancel">Annuler</button>
-          </div>
-        </div>`;
-            document.body.appendChild(wrap);
+        // — affichage inline sous le champ
+        function showOcrInline(cands) {
+            if (!cands.length) { el.ocrBox.style.display = 'none'; return; }
 
-            const list = wrap.querySelector('.ocr-list');
+            el.ocrText.textContent = cands[0].text;
+            el.ocrBox.style.display = 'block';
 
-            cands.forEach((c, idx) => {
+            // actions
+            el.ocrAdd.onclick = () => {
+                el.addr.value = cands[0].text;
+                el.add.click();
+            };
+            el.ocrEdit.onclick = () => {
+                const nv = prompt("Corriger l'adresse :", cands[0].text);
+                if (nv && nv.trim()) { el.addr.value = nv.trim(); el.add.click(); }
+            };
+
+            // autres propositions
+            el.ocrAlt.innerHTML = '';
+            cands.slice(1).forEach(c => {
                 const btn = document.createElement('button');
-                btn.className = 'btn ocr-choice' + (idx === 0 && c.kind === 'full' ? ' primary' : '');
+                btn.className = 'btn';
                 btn.textContent = c.text;
+                btn.style.textAlign = 'left';
                 btn.onclick = () => {
                     el.addr.value = c.text;
                     el.add.click();
-                    document.body.removeChild(wrap);
                 };
-                list.appendChild(btn);
+                const wrap = document.createElement('div');
+                wrap.className = 'card';
+                wrap.style.gridTemplateColumns = '1fr';
+                wrap.appendChild(btn);
+                el.ocrAlt.appendChild(wrap);
             });
 
-            wrap.querySelector('#ocr-edit').onclick = () => {
-                const base = (cands[0] && cands[0].text) || '';
-                const nv = prompt("Corriger l'adresse avant ajout :", base);
-                if (nv && nv.trim()) { el.addr.value = nv.trim(); el.add.click(); }
-                document.body.removeChild(wrap);
+            el.ocrToggle.onclick = () => {
+                el.ocrAlt.style.display = (el.ocrAlt.style.display === 'none' || !el.ocrAlt.style.display) ? 'block' : 'none';
             };
-
-            wrap.querySelector('#ocr-cancel').onclick = () => document.body.removeChild(wrap);
         }
 
         el.fileCam.addEventListener('change', async (e) => {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
             try {
+                el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none';
                 const oldPh = el.addr.placeholder;
                 el.addr.placeholder = "Analyse de l'image…";
 
                 const dataURL = await preprocessImageToDataURL(file);
 
-                const worker = await Tesseract.createWorker('fra+eng', 1, { logger: m => console.log(m) });
+                const worker = await Tesseract.createWorker('fra+eng', 1);
                 await worker.setParameters({
                     tessedit_pageseg_mode: 4,
                     preserve_interword_spaces: '1',
@@ -349,11 +384,8 @@
 
                 if (!cands.length) {
                     alert("Adresse non trouvée. Réessaie avec une photo nette et bien éclairée.");
-                } else if (cands[0].kind === 'full') {
-                    el.addr.value = cands[0].text;
-                    el.add.click();
                 } else {
-                    showOcrPicker(cands);
+                    showOcrInline(cands);
                 }
 
                 el.addr.placeholder = oldPh;
@@ -537,6 +569,7 @@
             el.sumDist.textContent = 'Distance totale : –';
             el.sumTime.textContent = 'Durée totale (≈) : –';
             if (clearInput) { raw = []; renderList(); }
+            el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none';
         }
         el.reset.onclick = () => resetAll(true);
 
