@@ -169,7 +169,9 @@
         };
         el.clear.onclick = () => { raw = []; renderList(); };
 
-        // --------- OCR via caméra (amélioré) ----------
+        // =========================================
+        // = OCR via caméra (amélioré) =
+        // =========================================
         el.scan.onclick = () => el.fileCam.click();
 
         async function preprocessImageToDataURL(file) {
@@ -207,40 +209,80 @@
             return c.toDataURL('image/png');
         }
 
-        function pickBestAddressCandidates(lines) {
-            const voie = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier|lotissement|résidence|residence)\b/i;
-            const cp = /\b\d{5}\b/;
-            const cityHint = /\b(paris|lyon|marseille|lille|roubaix|tourcoing|bordeaux|toulouse|nantes|nice|rennes|reims|dijon|angers|tours|strasbourg|metz|nancy)\b/i;
-
-            const cleaned = lines
-                .map(s => s.replace(/\s{2,}/g, ' ').replace(/[|]/g, 'I').trim())
+        function splitCleanLines(text) {
+            return (text || '')
+                .replace(/\r/g, '')
+                .split('\n')
+                .map(s => s.replace(/[|]/g, 'I').replace(/\s{2,}/g, ' ').trim())
                 .filter(Boolean);
+        }
 
-            const candidates = [];
-            for (let i = 0; i < cleaned.length; i++) {
-                const a = cleaned[i];
-                const b = cleaned[i + 1] ? `${cleaned[i]}, ${cleaned[i + 1]}` : cleaned[i];
+        function extractComponents(lines) {
+            const voie = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier)\b/i;
+            const cpCityRE = /\b(\d{5})\b[\s,-]*([A-ZÀÂÄÇÉÈÊËÏÎÔÖÙÛÜŸ][A-Za-zÀ-ÿ' \-]*)/;
+            const complRE = /\b(appt|appartement|bât|bat|bâtiment|étage|etage|esc|escalier|porte|lot|bp|résidence|residence|immeuble|entrée)\b[\w\- ]*/i;
 
-                const scoreLine = (t) =>
-                    (voie.test(t) ? 3 : 0) + (cp.test(t) ? 3 : 0) + (cityHint.test(t) ? 1 : 0) + Math.min(2, Math.floor(t.length / 20));
+            let cp = '', city = '', cpLineIdx = -1;
+            lines.forEach((ln, i) => {
+                const m = ln.match(cpCityRE);
+                if (m && m[1] && m[2] && cpLineIdx === -1) {
+                    cp = m[1];
+                    city = m[2].replace(/[,.;]+$/, '').trim();
+                    cpLineIdx = i;
+                }
+            });
 
-                candidates.push({ text: a, score: scoreLine(a) });
-                if (b !== a) candidates.push({ text: b, score: scoreLine(b) });
+            let street = '', streetIdx = -1;
+            lines.forEach((ln, i) => {
+                if (voie.test(ln)) {
+                    street = ln.replace(/[,.;]+$/, '').trim();
+                    streetIdx = i;
+                }
+            });
+
+            let complement = '';
+            const look = [streetIdx + 1, streetIdx - 1, cpLineIdx - 1, cpLineIdx + 1]
+                .filter(i => i >= 0 && i < lines.length);
+            for (const i of look) {
+                const ln = lines[i];
+                const m = ln.match(complRE);
+                if (m) {
+                    complement = ln.replace(/[,.;]+$/, '').trim();
+                    break;
+                }
             }
 
-            const uniq = [];
+            if (cp && cp.length === 5) cp = cp.replace(/[Oo]/g, '0');
+
+            let full = '';
+            if (street && cp && city) {
+                full = complement ? `${street}, ${complement}, ${cp} ${city}` : `${street}, ${cp} ${city}`;
+            }
+            return { street, complement, cp, city, full };
+        }
+
+        function buildCandidates(lines) {
+            const { street, complement, cp, city, full } = extractComponents(lines);
+            const out = [];
+            if (full) out.push({ text: full, kind: 'full' });
+            if (street) out.push({ text: street, kind: 'street' });
+            if (complement) out.push({ text: complement, kind: 'compl' });
+            if (cp && city) out.push({ text: `${cp} ${city}`, kind: 'cpcity' });
+
+            lines.forEach((ln, i) => {
+                if (i < lines.length - 1) {
+                    const joined = `${ln}, ${lines[i + 1]}`.replace(/\s{2,}/g, ' ').trim();
+                    if (!out.find(o => o.text.toLowerCase() === joined.toLowerCase()))
+                        out.push({ text: joined, kind: 'joined' });
+                }
+            });
+
             const seen = new Set();
-            candidates
-                .filter(c => c.score > 0)
-                .sort((x, y) => y.score - x.score)
-                .forEach(c => {
-                    const k = c.text.toLowerCase();
-                    if (!seen.has(k)) { seen.add(k); uniq.push(c); }
-                });
-
-            if (!uniq.length) {
-                cleaned.sort((a, b) => b.length - a.length).slice(0, 3).forEach(t => uniq.push({ text: t, score: 1 }));
-            }
+            const uniq = out.filter(o => {
+                const k = o.text.toLowerCase();
+                if (seen.has(k)) return false;
+                seen.add(k); return true;
+            });
             return uniq.slice(0, 6);
         }
 
@@ -252,15 +294,17 @@
           <div class="ocr-title">Sélectionne l'adresse détectée</div>
           <div class="ocr-list"></div>
           <div class="ocr-actions">
+            <button class="btn ghost" id="ocr-edit">Corriger avant ajout</button>
             <button class="btn ghost" id="ocr-cancel">Annuler</button>
           </div>
         </div>`;
             document.body.appendChild(wrap);
 
             const list = wrap.querySelector('.ocr-list');
-            cands.forEach(c => {
+
+            cands.forEach((c, idx) => {
                 const btn = document.createElement('button');
-                btn.className = 'btn ocr-choice';
+                btn.className = 'btn ocr-choice' + (idx === 0 && c.kind === 'full' ? ' primary' : '');
                 btn.textContent = c.text;
                 btn.onclick = () => {
                     el.addr.value = c.text;
@@ -269,6 +313,14 @@
                 };
                 list.appendChild(btn);
             });
+
+            wrap.querySelector('#ocr-edit').onclick = () => {
+                const base = (cands[0] && cands[0].text) || '';
+                const nv = prompt("Corriger l'adresse avant ajout :", base);
+                if (nv && nv.trim()) { el.addr.value = nv.trim(); el.add.click(); }
+                document.body.removeChild(wrap);
+            };
+
             wrap.querySelector('#ocr-cancel').onclick = () => document.body.removeChild(wrap);
         }
 
@@ -292,16 +344,12 @@
                 const { data } = await worker.recognize(dataURL);
                 await worker.terminate();
 
-                const lines = (data.text || '')
-                    .replace(/\r/g, '')
-                    .split('\n')
-                    .map(s => s.trim())
-                    .filter(Boolean);
+                const lines = splitCleanLines(data.text);
+                const cands = buildCandidates(lines);
 
-                const cands = pickBestAddressCandidates(lines);
                 if (!cands.length) {
                     alert("Adresse non trouvée. Réessaie avec une photo nette et bien éclairée.");
-                } else if (cands.length === 1) {
+                } else if (cands[0].kind === 'full') {
                     el.addr.value = cands[0].text;
                     el.add.click();
                 } else {
@@ -316,6 +364,7 @@
                 e.target.value = '';
             }
         });
+        // ====== FIN OCR ======
 
         // --------- Geocoding ----------
         async function geocodeAll(lines) {
