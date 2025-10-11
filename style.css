@@ -1,5 +1,4 @@
 /* ========= DetourZero – CSS responsive ========= */
-
 :root {
     --bg: #0a0b10;
     --panel: #0f1220;
@@ -10,6 +9,7 @@
     --brand: #7c5cff;
     --brand2: #22e0a8;
     --danger: #ff5a7a;
+    --accent: #5b3cff;
 
     --fs-base: clamp(14px, 1.7vw, 16px);
     --fs-sm: clamp(12px, 1.4vw, 13px);
@@ -85,12 +85,11 @@ h1 {
     padding: var(--gap);
     display: grid;
     gap: var(--gap);
-    grid-template-columns: 460px 1fr;
-    /* desktop: panneau + carte */
+    grid-template-columns: 520px 1fr;
     min-height: calc(100vh - 56px);
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1040px) {
     .wrap {
         grid-template-columns: 1fr
     }
@@ -131,13 +130,14 @@ input:focus {
     margin-bottom: 12px
 }
 
-/* Form grid */
+/* Form grid (Nom, Adresse, Tel, TW) */
 .grid-form {
     display: grid;
     gap: 10px;
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
         "client addr"
+        "phone phone"
         "twStart twEnd"
         "actions actions";
 }
@@ -148,6 +148,10 @@ input:focus {
 
 .grid-form #addr {
     grid-area: addr
+}
+
+.grid-form #phone {
+    grid-area: phone
 }
 
 .grid-form #twStart {
@@ -168,6 +172,7 @@ input:focus {
         grid-template-areas:
             "client"
             "addr"
+            "phone"
             "twStart"
             "twEnd"
             "actions";
@@ -252,7 +257,7 @@ input:focus {
 .list {
     display: grid;
     gap: 8px;
-    max-height: 260px;
+    max-height: 300px;
     overflow: auto;
     margin-top: 8px;
     scroll-behavior: smooth;
@@ -261,13 +266,22 @@ input:focus {
 
 .card {
     display: grid;
-    grid-template-columns: auto 1fr auto auto auto;
+    grid-template-columns: auto 1fr auto auto;
     gap: 10px;
     align-items: center;
     background: #0a0f1f;
     border: 1px solid var(--line);
     border-radius: var(--r);
     padding: 8px;
+}
+
+.card.clickable {
+    cursor: pointer
+}
+
+.card.clickable:hover {
+    border-color: #2b3360;
+    background: #0c1223
 }
 
 .idx {
@@ -344,24 +358,12 @@ input:focus {
     overflow: hidden;
 }
 
-@media (max-width:980px) {
+@media (max-width:1040px) {
     #map {
         height: var(--map-mob);
-        min-height: 400px;
+        min-height: 420px;
     }
 }
-
-/* Misc */
-.muted {
-    color: var(--sub);
-    font-size: var(--fs-sm)
-}
-
-#scan {
-    border-radius: 999px;
-}
-
-/* bouton caméra arrondi */
 
 /* OCR inline */
 .ocr-inline {
@@ -372,7 +374,7 @@ input:focus {
     grid-template-columns: 1fr auto
 }
 
-/* --- In-app Navigation HUD --- */
+/* Navigation HUD */
 .nav-hud {
     position: fixed;
     left: 50%;
@@ -433,4 +435,123 @@ input:focus {
     .nav-actions .btn {
         flex: 1
     }
+}
+
+/* Arrow icon container (Leaflet divIcon) */
+.arrow-icon {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    pointer-events: none
+}
+
+/* Modals (Signature + Fiche client) */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+}
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, .5);
+    backdrop-filter: blur(2px);
+}
+
+.modal-card {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(720px, 94vw);
+    background: #0a0f1f;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+    padding: 12px;
+}
+
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px
+}
+
+.modal-title {
+    font-weight: 800
+}
+
+.sig-info,
+.client-summary {
+    color: var(--sub);
+    margin-bottom: 8px;
+    font-size: .95rem
+}
+
+#sigCanvas {
+    width: 100%;
+    height: auto;
+    background: #fff;
+    border-radius: 8px;
+    border: 1px dashed #334;
+    display: block;
+    touch-action: none;
+}
+
+.sig-tools {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px
+}
+
+/* Scrollbar (optionnel) */
+.list::-webkit-scrollbar {
+    width: 10px
+}
+
+.list::-webkit-scrollbar-thumb {
+    background: #1f2748;
+    border-radius: 8px
+}
+
+.list::-webkit-scrollbar-thumb:hover {
+    background: #273060
+}
+
+/* --- Fix superposition modales / HUD au-dessus de Leaflet --- */
+.leaflet-container {
+    z-index: 0;
+}
+
+/* base basse pour la carte */
+.leaflet-control-container {
+    z-index: 1000;
+}
+
+/* contrôles Leaflet au-dessus de la carte */
+
+.nav-hud {
+    z-index: 4000 !important;
+}
+
+/* HUD navigation au-dessus des contrôles */
+
+.modal {
+    z-index: 5000 !important;
+}
+
+/* couche modale tout en haut */
+.modal-card {
+    position: relative;
+    z-index: 5001;
+}
+
+.modal-backdrop {
+    position: absolute;
+    z-index: 5000;
 }

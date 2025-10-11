@@ -6,8 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DetourZero — Optimiseur de tournée (client-side)</title>
 
+    <!-- Styles -->
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+
+    <!-- Librairies -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
@@ -19,18 +22,21 @@
     <header>
         <div class="logo"></div>
         <h1>DetourZero — Optimiseur de tournée</h1>
-        <span class="tag">100% client-side · OSRM · Nominatim</span>
+        <span class="tag">100% client-side - OSRM - Nominatim</span>
     </header>
 
     <main class="wrap">
         <section class="panel">
             <div class="row">
-                <label>Ajouter une adresse (départ = première adresse)</label>
+                <label>Ajouter une adresse (départ = première ligne)</label>
+
+                <!-- Formulaire ajout -->
                 <div class="grid-form">
-                    <input id="client" placeholder="Nom client (optionnel)" />
+                    <input id="client" placeholder="Nom client" />
                     <input id="addr" placeholder="Adresse (ex: 5 Rue de l'Église, 62570 Helfaut)" />
-                    <input id="twStart" type="time" />
-                    <input id="twEnd" type="time" />
+                    <input id="phone" inputmode="tel" placeholder="Téléphone (ex: 06 12 34 56 78)" />
+                    <input id="twStart" type="time" placeholder="Début (HH:MM)" />
+                    <input id="twEnd" type="time" placeholder="Fin (HH:MM)" />
                     <div class="hstack form-actions">
                         <button class="btn" id="scan">📷 Scanner</button>
                         <button class="btn" id="add">+ Ajouter</button>
@@ -38,19 +44,19 @@
                     <input id="fileCam" type="file" accept="image/*" capture="environment" style="display:none" />
                 </div>
 
-                <!-- Résultats OCR sous les champs -->
+                <!-- Proposition OCR sous les champs -->
                 <div id="ocrBox" class="ocr-inline" style="display:none;">
                     <div class="card ocr-card-inline">
                         <div class="txt" id="ocrText"></div>
                         <div class="hstack">
-                            <button class="btn" id="ocrAdd">Ajouter</button>
-                            <button class="btn ghost" id="ocrEdit">Corriger</button>
-                            <button class="btn ghost" id="ocrToggle">Autres propositions</button>
+                            <button class="btn" id="ocrUse">Utiliser</button>
+                            <button class="btn ghost" id="ocrToggle">Voir autres propositions</button>
                         </div>
                     </div>
                     <div id="ocrAlt" class="list" style="display:none; margin-top:8px;"></div>
                 </div>
 
+                <!-- Paramètres globaux -->
                 <div class="grid-run">
                     <div class="field">
                         <label for="startTime">Heure de départ</label>
@@ -67,13 +73,15 @@
                     <button class="btn ghost" id="clear">Vider (liste)</button>
                 </div>
 
-                <div class="muted">Jusqu'à <b>150 adresses</b>. Ensuite : « Géocoder », puis « Optimiser ».</div>
+                <div class="muted">
+                    Jusqu'à <b>150 adresses</b>.
+                </div>
             </div>
 
             <div class="row hstack">
-                <button class="btn" id="geocode">1) Géocoder</button>
-                <button class="btn primary" id="optimize" disabled>2) Optimiser</button>
-                <button class="btn accent" id="draw" disabled>3) Tracer sur la carte</button>
+                <button class="btn" id="geocode">1) Géocoder (liste)</button>
+                <button class="btn primary" id="optimize" disabled>2) Optimiser (ordre)</button>
+                <button class="btn accent" id="draw" disabled>3) Tracer l’itinéraire complet</button>
             </div>
 
             <div class="row">
@@ -87,16 +95,12 @@
                 </div>
 
                 <div class="hstack" style="margin-top:8px">
-                    <button class="btn" id="gmaps" disabled>Ouvrir dans Google Maps</button>
+                    <button class="btn" id="gmaps" disabled>Ouvrir dans Google Maps (complet)</button>
                     <button class="btn" id="pdf" disabled>Exporter PDF</button>
-                    <button class="btn" id="gpx" disabled>Exporter GPX</button>
-                    <button class="btn" id="nav" disabled>🧭 Démarrer la navigation</button>
+                    <button class="btn" id="gpx" disabled>Exporter GPX (complet)</button>
                     <button class="btn ghost" id="follow">📌 Suivi carte: ON</button>
                     <button class="btn danger" id="reset">Réinitialiser</button>
                     <button class="btn danger" id="endTour">🏁 Fin de tournée</button>
-                </div>
-
-                <div class="muted">Coche ✅ pour “Livré”. ✎ pour éditer, 🗑 pour retirer. Le compteur ignore le dépôt.
                 </div>
             </div>
         </section>
@@ -110,7 +114,7 @@
             <div class="nav-row">
                 <div class="nav-step">
                     <div class="nav-maneuver" id="navManeuver">Prêt ?</div>
-                    <div class="nav-detail" id="navDetail">Clique “Démarrer la navigation”.</div>
+                    <div class="nav-detail" id="navDetail">Clique “🧭 Naviguer” depuis une fiche client.</div>
                 </div>
                 <div class="nav-meta">
                     <div id="navDist">—</div>
@@ -123,204 +127,264 @@
                 <button class="btn danger" id="navStop">🛑 Stop</button>
             </div>
         </div>
+
+        <!-- Modal Signature -->
+        <div id="sigModal" class="modal" style="display:none">
+            <div class="modal-backdrop"></div>
+            <div class="modal-card">
+                <div class="modal-head">
+                    <div class="modal-title">Signature de livraison</div>
+                    <button class="iconbtn" id="sigClose" title="Fermer">✖</button>
+                </div>
+                <div class="modal-body">
+                    <div class="sig-info" id="sigInfo">Client — Adresse</div>
+                    <canvas id="sigCanvas" width="600" height="240"></canvas>
+                    <div class="sig-tools">
+                        <button class="btn ghost" id="sigClear">Effacer</button>
+                        <button class="btn" id="sigValidate">Valider la signature</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Fiche Client -->
+        <div id="clientModal" class="modal" style="display:none">
+            <div class="modal-backdrop"></div>
+            <div class="modal-card">
+                <div class="modal-head">
+                    <div class="modal-title" id="clientModalTitle">Client</div>
+                    <button class="iconbtn" id="clientModalClose" title="Fermer">✖</button>
+                </div>
+                <div class="modal-body">
+                    <div class="client-summary" id="clientSummary">—</div>
+                    <div class="hstack" style="margin-top:10px">
+                        <button class="btn primary" id="actNavigate">🧭 Naviguer</button>
+                        <button class="btn" id="actSign">✒️ Signature</button>
+                        <button class="btn ghost" id="actCall">📞 Appeler</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
-        /* ===== Helpers & éléments ===== */
+        /* ====== Helpers & éléments ====== */
         const $ = s => document.querySelector(s);
         const el = {
-            client: $('#client'), addr: $('#addr'), twStart: $('#twStart'), twEnd: $('#twEnd'),
+            client: $('#client'), addr: $('#addr'), phone: $('#phone'),
+            twStart: $('#twStart'), twEnd: $('#twEnd'),
             add: $('#add'), scan: $('#scan'), fileCam: $('#fileCam'),
             sample: $('#sample'), clear: $('#clear'), list: $('#list'),
             geocode: $('#geocode'), optimize: $('#optimize'), draw: $('#draw'),
             gmaps: $('#gmaps'), pdf: $('#pdf'), gpx: $('#gpx'), reset: $('#reset'),
-            nav: $('#nav'), follow: $('#follow'),
+            follow: $('#follow'),
             sumDist: $('#sumDist'), sumTime: $('#sumTime'),
             startTime: $('#startTime'), serviceMin: $('#serviceMin'),
-            ocrBox: $('#ocrBox'), ocrText: $('#ocrText'),
-            ocrAdd: $('#ocrAdd'), ocrEdit: $('#ocrEdit'), ocrToggle: $('#ocrToggle'), ocrAlt: $('#ocrAlt'),
-            navHud: $('#navHud'), navManeuver: $('#navManeuver'), navDetail: $('#navDetail'),
-            navDist: $('#navDist'), navEta: $('#navEta'),
+            ocrBox: $('#ocrBox'), ocrText: $('#ocrText'), ocrUse: $('#ocrUse'), ocrAlt: $('#ocrAlt'), ocrToggle: $('#ocrToggle'),
+            navHud: $('#navHud'), navManeuver: $('#navManeuver'), navDetail: $('#navDetail'), navDist: $('#navDist'), navEta: $('#navEta'),
             navPrev: $('#navPrev'), navNext: $('#navNext'), navStop: $('#navStop'),
-            counter: $('#counter'), endTour: $('#endTour')
+            counter: $('#counter'), endTour: $('#endTour'),
+            // Signature modal
+            sigModal: $('#sigModal'), sigCanvas: $('#sigCanvas'), sigClear: $('#sigClear'), sigValidate: $('#sigValidate'),
+            sigInfo: $('#sigInfo'), sigClose: $('#sigClose'),
+            // Client modal
+            clientModal: $('#clientModal'), clientModalClose: $('#clientModalClose'),
+            clientModalTitle: $('#clientModalTitle'), clientSummary: $('#clientSummary'),
+            actNavigate: $('#actNavigate'), actSign: $('#actSign'), actCall: $('#actCall'),
         };
 
-        /* ===== State & persistance ===== */
-        const LS_KEY = 'detourzero_v3_raw', LS_SET = 'detourzero_v3_settings';
+        /* ====== State & storage ====== */
+        const LS_KEY = 'detourzero_v6_raw', LS_SET = 'detourzero_v6_settings';
         const genId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+        // raw item: {id,name,address,phone,twStart,twEnd,delivered,signData,signTimeISO}
         let raw = [], settings = { startTime: '08:00', serviceMin: 5 };
         try {
             raw = JSON.parse(localStorage.getItem(LS_KEY) || '[]') || [];
             settings = Object.assign(settings, JSON.parse(localStorage.getItem(LS_SET) || '{}') || {});
-            if (settings.startTime) el.startTime.value = settings.startTime;
-            if (settings.serviceMin != null) el.serviceMin.value = settings.serviceMin;
+            el.startTime.value = settings.startTime || '08:00';
+            el.serviceMin.value = settings.serviceMin ?? 5;
             raw.forEach(r => { if (!r.id) r.id = genId(); if (typeof r.delivered !== 'boolean') r.delivered = false; });
         } catch { }
-
         function saveState() {
             localStorage.setItem(LS_KEY, JSON.stringify(raw));
             localStorage.setItem(LS_SET, JSON.stringify({ startTime: el.startTime.value, serviceMin: +el.serviceMin.value || 0 }));
             updateCounter();
         }
 
-        let points = [], ordered = [], routeGeo = null, routeCoords = [], warningsTW = [], viewMode = 'raw';
+        let points = [], ordered = [], routeGeo = null, routeCoords = [];
+        let warningsTW = [], viewMode = 'raw';
         let stats = { totalKm: 0, totalMin: 0, startMin: 8 * 60, serviceMin: 5, stops: 0 };
 
-        /* ===== Time utils ===== */
-        const timeStrToMinHHMM = t => { if (!t) return null; const m = t.match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; };
+        /* ====== Time utils ====== */
+        const timeStrToMin = t => { if (!t) return null; const m = t.match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; };
         const minToHHMM = m => { m = Math.round(m); const h = Math.floor(m / 60), mm = m % 60; return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; };
         const minsToStr = m => { m = Math.round(m); const h = Math.floor(m / 60), mm = m % 60; return h ? `${h} h ${String(mm).padStart(2, '0')} min` : `${mm} min`; };
 
-        /* ===== Carte ===== */
+        /* ====== Map & user marker (flèche mauve) ====== */
         const map = L.map('map').setView([48.8566, 2.3522], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
         const group = L.layerGroup().addTo(map), routeLayer = L.geoJSON(null).addTo(map);
-        let meMarker = null, meAccuracy = null, followOn = true;
-        const fitTo = a => a.length && map.fitBounds(L.latLngBounds(a.map(p => [p.lat, p.lon])), { padding: [28, 28] });
-        function resetMap() { group.clearLayers(); routeLayer.clearLayers(); if (meMarker) { map.removeLayer(meMarker); meMarker = null; } if (meAccuracy) { map.removeLayer(meAccuracy); meAccuracy = null; } }
+        let meMarker = null, meAccuracy = null, followOn = true, headingDeg = 0;
 
-        /* ===== Compteur ===== */
+        const arrowSVG = (deg = 0) => `
+    <svg width="36" height="36" viewBox="0 0 64 64" style="transform: rotate(${deg}deg)">
+      <defs><filter id="s" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#2b1f80" flood-opacity="0.9"/></filter></defs>
+      <g filter="url(#s)"><path d="M32 6 L42 30 L34 30 L34 54 L30 54 L30 30 L22 30 Z" fill="#5b3cff" stroke="#3414b8" stroke-width="2"/></g>
+    </svg>`;
+        const arrowIcon = (deg = 0) => L.divIcon({ className: 'arrow-icon', html: arrowSVG(deg), iconSize: [36, 36], iconAnchor: [18, 18] });
+
+        function fitTo(arr) { if (!arr.length) return; map.fitBounds(L.latLngBounds(arr.map(p => [p.lat, p.lon])), { padding: [28, 28] }); }
+        function resetMap() { group.clearLayers(); routeLayer.clearLayers(); }
+
+        /* ====== Compteur ====== */
         function updateCounter() {
             const total = Math.max(0, raw.length - 1);
             const rest = raw.reduce((n, r, i) => n + (i > 0 && !r.delivered ? 1 : 0), 0);
             el.counter.textContent = `${rest} clients restants sur ${total}`;
         }
 
-        /* ===== Liste ===== */
+        /* ====== Liste (clic = fiche client) ====== */
         function renderList() {
             el.list.innerHTML = '';
-            if (viewMode === 'ordered' && ordered.length) {
-                ordered.forEach((p, idx) => {
-                    const c = document.createElement('div'); c.className = 'card';
-                    const base = raw.find(r => r.id === p.id); const delivered = base?.delivered || false;
-                    if (delivered) c.classList.add('done');
-                    const n = document.createElement('div'); n.className = 'idx'; n.textContent = idx;
-                    const t = document.createElement('div'); t.className = 'txt';
-                    const tw = (p.twStartMin != null || p.twEndMin != null) ? ` <span class="mini">[${p.twStartMin != null ? minToHHMM(p.twStartMin) : '..'}–${p.twEndMin != null ? minToHHMM(p.twEndMin) : '..'}]</span>` : '';
-                    const eta = (p.eta != null) ? ` — ETA ${minToHHMM(p.eta)}` : '';
-                    t.innerHTML = `${p.name ? ('<b>' + p.name + '</b> — ') : ''}${p.address}${tw}${eta}`;
-                    const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = delivered; chk.onchange = () => toggleDelivered(p.id, chk.checked);
-                    c.append(n, t, chk); el.list.appendChild(c);
-                });
-            } else {
-                raw.forEach((it, i) => {
-                    const c = document.createElement('div'); c.className = 'card'; if (it.delivered) c.classList.add('done');
-                    const n = document.createElement('div'); n.className = 'idx'; n.textContent = i;
-                    const t = document.createElement('div'); t.className = 'txt';
-                    const tw = (it.twStart || it.twEnd) ? ` <span class="mini">[${it.twStart || '..'}–${it.twEnd || '..'}]</span>` : '';
-                    t.innerHTML = `${it.name ? ('<b>' + it.name + '</b> — ') : ''}${it.address}${tw}`;
-                    const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = it.delivered || false; chk.onchange = () => { it.delivered = chk.checked; saveState(); renderList(); };
-                    const edit = document.createElement('button'); edit.className = 'iconbtn'; edit.textContent = '✎';
-                    edit.onclick = () => {
-                        const name = prompt("Nom client :", it.name || ''); if (name === null) return;
-                        const addr = prompt("Adresse :", it.address || ''); if (addr === null || !addr.trim()) return;
-                        const ts = prompt("Début (HH:MM ou vide) :", it.twStart || ''); if (ts === null) return;
-                        const te = prompt("Fin (HH:MM ou vide) :", it.twEnd || ''); if (te === null) return;
-                        raw[i] = { ...it, name: name.trim(), address: addr.trim(), twStart: ts.trim() || '', twEnd: te.trim() || '' }; saveState(); renderList();
-                    };
-                    const del = document.createElement('button'); del.className = 'iconbtn'; del.textContent = '🗑'; del.onclick = () => { raw.splice(i, 1); saveState(); renderList(); };
-                    c.append(n, t, chk, edit, del); el.list.appendChild(c);
-                });
-            }
+            const show = (viewMode === 'ordered' && ordered.length) ? ordered : raw.map((r, i) => ({
+                id: r.id, index: i, name: r.name, address: r.address, phone: r.phone,
+                twStartMin: timeStrToMin(r.twStart) || null, twEndMin: timeStrToMin(r.twEnd) || null, eta: null
+            }));
+            show.forEach((p, idx) => {
+                const base = raw.find(r => r.id === p.id);
+                const delivered = base?.delivered || false;
+                const c = document.createElement('div'); c.className = 'card clickable'; if (delivered) c.classList.add('done');
+                const n = document.createElement('div'); n.className = 'idx'; n.textContent = idx;
+                const t = document.createElement('div'); t.className = 'txt';
+                const tw = (p.twStartMin != null || p.twEndMin != null) ? ` <span class="mini">[${p.twStartMin != null ? minToHHMM(p.twStartMin) : '..'}–${p.twEndMin != null ? minToHHMM(p.twEndMin) : '..'}]</span>` :
+                    ((base && (base.twStart || base.twEnd)) ? ` <span class="mini">[${base.twStart || '..'}–${base.twEnd || '..'}]</span>` : '');
+                const phoneTxt = base?.phone ? ` <span class="mini">☎ ${base.phone}</span>` : '';
+                t.innerHTML = `${p.name ? ('<b>' + p.name + '</b> — ') : ''}${p.address}${tw}${phoneTxt}`;
+
+                c.onclick = () => openClientModal(p.id);
+                const edit = document.createElement('button'); edit.className = 'iconbtn'; edit.title = 'Éditer'; edit.textContent = '✎';
+                edit.onclick = (e) => { e.stopPropagation(); editItem(p.id); };
+                const del = document.createElement('button'); del.className = 'iconbtn'; del.title = 'Supprimer'; del.textContent = '🗑';
+                del.onclick = (e) => { e.stopPropagation(); const i = raw.findIndex(r => r.id === p.id); if (i > -1) { raw.splice(i, 1); saveState(); renderList(); } };
+                c.append(n, t, edit, del); el.list.appendChild(c);
+            });
             updateCounter();
         }
-        const toggleDelivered = (id, v) => { const it = raw.find(r => r.id === id); if (it) { it.delivered = !!v; saveState(); renderList(); } };
+        function editItem(id) {
+            const it = raw.find(r => r.id === id); if (!it) return;
+            const name = prompt("Nom client :", it.name || ''); if (name === null) return;
+            const addr = prompt("Adresse :", it.address || ''); if (addr === null || !addr.trim()) return;
+            const phone = prompt("Téléphone (optionnel) :", it.phone || ''); if (phone === null) return;
+            const ts = prompt("Début (HH:MM ou vide) :", it.twStart || ''); if (ts === null) return;
+            const te = prompt("Fin (HH:MM ou vide) :", it.twEnd || ''); if (te === null) return;
+            Object.assign(it, { name: name.trim(), address: addr.trim(), phone: normalizePhone(phone.trim()), twStart: ts.trim() || '', twEnd: te.trim() || '' });
+            saveState(); renderList();
+        }
 
-        /* ===== Ajout ===== */
+        /* ====== Ajout client ====== */
         el.add.onclick = () => {
-            const name = el.client.value.trim(), addr = el.addr.value.trim(), ts = el.twStart.value.trim(), te = el.twEnd.value.trim();
-            if (!addr) return alert('Adresse obligatoire.'); if (raw.length >= 150) return alert('Limite 150 adresses.');
-            raw.push({ id: genId(), name, address: addr, twStart: ts, twEnd: te, delivered: false });
-            el.client.value = ''; el.addr.value = ''; el.twStart.value = ''; el.twEnd.value = '';
-            el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none'; viewMode = 'raw'; saveState(); renderList();
+            const name = el.client.value.trim();
+            const addr = el.addr.value.trim();
+            const phone = normalizePhone(el.phone.value.trim());
+            const ts = el.twStart.value.trim();
+            const te = el.twEnd.value.trim();
+            if (!addr) return alert('Adresse obligatoire.');
+            if (raw.length >= 150) return alert('Limite 150 adresses.');
+            raw.push({ id: genId(), name, address: addr, phone, twStart: ts, twEnd: te, delivered: false, signData: null, signTimeISO: null });
+            el.client.value = ''; el.addr.value = ''; el.phone.value = ''; el.twStart.value = ''; el.twEnd.value = '';
+            el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none';
+            viewMode = 'raw'; saveState(); renderList();
         };
         el.addr.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.add.click(); } });
         el.sample.onclick = () => {
             raw = [
-                { id: genId(), name: 'Dépôt', address: "5 Rue de l'Église, 62570 Helfaut", twStart: '', twEnd: '', delivered: false },
-                { id: genId(), name: 'Client A', address: "12 Rue de Dunkerque, 62500 Saint-Omer", twStart: '09:00', twEnd: '11:00', delivered: false },
-                { id: genId(), name: 'Client B', address: "19 Avenue Foch, 62380 Lumbres", twStart: '', twEnd: '', delivered: false },
-                { id: genId(), name: 'Client C', address: "Rue Saint-Bertin, 62500 Saint-Omer", twStart: '10:00', twEnd: '12:00', delivered: false },
-                { id: genId(), name: 'Client D', address: "Rue du Rivage, 62380 Wizernes", twStart: '', twEnd: '', delivered: false }
-            ]; viewMode = 'raw'; saveState(); renderList();
+                { id: genId(), name: 'Dépôt', address: "5 Rue de l'Église, 62570 Helfaut", phone: '', twStart: '', twEnd: '', delivered: false, signData: null, signTimeISO: null },
+                { id: genId(), name: 'Client A', address: "12 Rue de Dunkerque, 62500 Saint-Omer", phone: '06 12 34 56 78', twStart: '09:00', twEnd: '11:00', delivered: false, signData: null, signTimeISO: null },
+                { id: genId(), name: 'Client B', address: "19 Avenue Foch, 62380 Lumbres", phone: '', twStart: '', twEnd: '', delivered: false, signData: null, signTimeISO: null },
+                { id: genId(), name: 'Client C', address: "Rue Saint-Bertin, 62500 Saint-Omer", phone: '+33 6 55 44 33 22', twStart: '10:00', twEnd: '12:00', delivered: false, signData: null, signTimeISO: null }
+            ]; saveState(); renderList();
         };
-        el.clear.onclick = () => { raw = []; viewMode = 'raw'; saveState(); renderList(); };
+        el.clear.onclick = () => { raw = []; saveState(); renderList(); };
 
-        /* ===== OCR Caméra ===== */
+        /* ====== OCR ====== */
         el.scan.onclick = () => el.fileCam.click();
-        async function preprocess(file) {
-            const img = await new Promise((res, rej) => { const u = URL.createObjectURL(file); const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = u; });
-            const MAX_W = 1800, sc = Math.min(1, MAX_W / img.width), w = Math.round(img.width * sc), h = Math.round(img.height * sc);
-            const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
-            const id = x.getImageData(0, 0, w, h), d = id.data, contrast = 1.2;
-            for (let i = 0; i < d.length; i += 4) { const r = d[i], g = d[i + 1], b = d[i + 2]; let y = 0.299 * r + 0.587 * g + 0.114 * b; y = ((y - 128) * contrast) + 128; y = Math.max(0, Math.min(255, y)); const thr = 160; const v = y > thr ? 255 : 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
-            x.putImageData(id, 0, 0); return c.toDataURL('image/png');
-        }
+        function normalizePhone(p) { if (!p) return ''; let s = p.replace(/[\s.\-()]/g, ''); if (s.startsWith('+33')) s = '0' + s.slice(3); if (s.startsWith('0033')) s = '0' + s.slice(4); return s.replace(/^(\d{2})(?=\d)/g, '$1 ').replace(/(\d{2})(?=\d)/g, '$1 ').trim(); }
         const splitLines = t => (t || '').replace(/\r/g, '').split('\n').map(s => s.replace(/[|]/g, 'I').replace(/\s{2,}/g, ' ').trim()).filter(Boolean);
-        function extractComponents(lines) {
+        function extractFromLines(lines) {
+            const phoneRE = /(?:\+33|0033|0)\s*[\s.\-()]?\s*[1-9](?:[\s.\-()]?\s*\d){8}/g;
+            let phone = ''; for (const ln of lines) { const m = [...ln.matchAll(phoneRE)]; if (m.length) { phone = normalizePhone(m[0][0]); break; } }
+            let name = ''; for (const ln of lines.slice(0, 4)) { if (!/\d/.test(ln) && ln.length <= 48) { name = ln; break; } }
             const voie = /\b(rue|avenue|av\.?|bd\.?|boulevard|chemin|impasse|place|route|allée|allee|quai|cours|sentier)\b/i;
             const cpRE = /\b(\d{5})\b/; const cityRE = /^[A-ZÀÂÄÇÉÈÊËÏÎÔÖÙÛÜŸ][A-Za-zÀ-ÿ' \-]+$/;
             let street = ''; for (const ln of lines) { if (voie.test(ln)) { street = ln.replace(/[,.;]+$/, '').trim(); break; } }
             const complRE = /\b(appt|appartement|bât|bat|bâtiment|étage|etage|esc|escalier|porte|lot|bp|résidence|residence|immeuble|entrée)\b[\w\- ]*/i;
             let complement = ''; for (const ln of lines) { if (complRE.test(ln)) { complement = ln.replace(/[,.;]+$/, '').trim(); break; } }
             let cp = '', city = ''; for (let i = 0; i < lines.length; i++) { const ln = lines[i], m = ln.match(cpRE); if (m) { cp = (m[1] || '').replace(/[Oo]/g, '0'); let tail = ln.slice(m.index + m[0].length).replace(/^[\s,;-]+/, '').trim(); if (cityRE.test(tail)) city = tail; else { const next = lines[i + 1]?.trim() || ''; if (cityRE.test(next)) city = next.replace(/[,.;]+$/, '').trim(); } break; } }
-            let full = ''; if (street && cp && city) full = complement ? `${street}, ${complement}, ${cp} ${city}` : `${street}, ${cp} ${city}`;
-            else if (street && cp) full = complement ? `${street}, ${complement}, ${cp}` : `${street}, ${cp}`;
-            else if (street) full = complement ? `${street}, ${complement}` : street;
-            return { street, complement, cp, city, full };
+            let address = ''; if (street && cp && city) address = complement ? `${street}, ${complement}, ${cp} ${city}` : `${street}, ${cp} ${city}`;
+            else if (street && cp) address = complement ? `${street}, ${complement}, ${cp}` : `${street}, ${cp}`;
+            else if (street) address = complement ? `${street}, ${complement}` : street;
+            return { name, address, phone };
         }
-        function buildCandidates(lines) {
-            const { street, complement, cp, city, full } = extractComponents(lines);
-            const out = []; if (full) out.push({ text: full, kind: 'full' });
-            if (street && cp && !city) out.push({ text: `${street}, ${cp}`, kind: 'partial' });
-            if (street && complement) out.push({ text: `${street}, ${complement}`, kind: 'partial' });
-            if (cp && city) out.push({ text: `${cp} ${city}`, kind: 'cpcity' });
-            if (street) out.push({ text: street, kind: 'street' });
-            lines.forEach((ln, i) => { if (i < lines.length - 1) out.push({ text: `${ln}, ${lines[i + 1]}`.replace(/\s{2,}/g, ' ').trim(), kind: 'joined' }); });
-            const seen = new Set(); const u = out.filter(o => { const k = o.text.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-            const rank = { full: 0, partial: 1, cpcity: 2, street: 3, joined: 4 }; u.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9)); return u.slice(0, 8);
-        }
-        function showOcrInline(cands) {
+        function showOcrCandidates(cands) {
             if (!cands.length) { el.ocrBox.style.display = 'none'; return; }
-            el.ocrText.textContent = cands[0].text; el.ocrBox.style.display = 'block';
-            el.ocrAdd.onclick = () => { el.addr.value = cands[0].text; el.add.click(); };
-            el.ocrEdit.onclick = () => { const nv = prompt("Corriger l'adresse :", cands[0].text); if (nv && nv.trim()) { el.addr.value = nv.trim(); el.add.click(); } };
-            el.ocrAlt.innerHTML = ''; cands.slice(1).forEach(c => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = c.text; b.style.textAlign = 'left'; b.onclick = () => { el.addr.value = c.text; el.add.click(); }; const wrap = document.createElement('div'); wrap.className = 'card'; wrap.style.gridTemplateColumns = '1fr'; wrap.appendChild(b); el.ocrAlt.appendChild(wrap); });
+            const top = cands[0];
+            el.ocrText.textContent = `${top.name || '(Nom ?)'} — ${top.address || '(Adresse ?)'} — ${top.phone || '(Téléphone ?)'}`;
+            el.ocrBox.style.display = 'block';
+            el.ocrAlt.innerHTML = '';
+            cands.slice(1).forEach(c => {
+                const card = document.createElement('div'); card.className = 'card'; card.style.gridTemplateColumns = '1fr';
+                const btn = document.createElement('button'); btn.className = 'btn'; btn.textContent = `${c.name || '(Nom ?)'} — ${c.address || '(Adresse ?)'} — ${c.phone || '(Téléphone ?)'}`;
+                btn.onclick = () => { el.client.value = c.name || ''; el.addr.value = c.address || ''; el.phone.value = c.phone || ''; };
+                card.appendChild(btn); el.ocrAlt.appendChild(card);
+            });
+            el.ocrUse.onclick = () => { el.client.value = top.name || ''; el.addr.value = top.address || ''; el.phone.value = top.phone || ''; };
             el.ocrToggle.onclick = () => { el.ocrAlt.style.display = (el.ocrAlt.style.display === 'none' || !el.ocrAlt.style.display) ? 'block' : 'none'; };
         }
-        el.fileCam.addEventListener('change', async e => {
-            const f = e.target.files?.[0]; if (!f) return;
+        el.fileCam.addEventListener('change', async (e) => {
+            const file = e.target.files?.[0]; if (!file) return;
             try {
                 el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none';
-                const dataURL = await preprocess(f);
+                const dataURL = await (async function preprocess(file) {
+                    const img = await new Promise((res, rej) => { const u = URL.createObjectURL(file); const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = u; });
+                    const MAX_W = 1800, sc = Math.min(1, MAX_W / img.width), w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+                    const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+                    const id = x.getImageData(0, 0, w, h), d = id.data, contrast = 1.2;
+                    for (let i = 0; i < d.length; i += 4) { const r = d[i], g = d[i + 1], b = d[i + 2]; let y = 0.299 * r + 0.587 * g + 0.114 * b; y = ((y - 128) * contrast) + 128; y = Math.max(0, Math.min(255, y)); const thr = 160; const v = y > thr ? 255 : 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+                    x.putImageData(id, 0, 0); return c.toDataURL('image/png');
+                })(file);
                 const worker = await Tesseract.createWorker('fra+eng', 1);
-                await worker.setParameters({
-                    tessedit_pageseg_mode: 4, preserve_interword_spaces: '1', user_defined_dpi: '300',
-                    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÄÇÉÈÊËÏÎÔÖÙÛÜŸabcdefghijklmnopqrstuvwxyzàâäçéèêëïîôöùûüÿ0123456789 ,.'-/"
-                });
+                await worker.setParameters({ tessedit_pageseg_mode: 4, preserve_interword_spaces: '1', user_defined_dpi: '300' });
                 const { data } = await worker.recognize(dataURL); await worker.terminate();
-                const cands = buildCandidates(splitLines(data.text));
-                if (!cands.length) alert("Adresse non trouvée. Photo plus nette ?");
-                else showOcrInline(cands);
+                const lines = splitLines(data.text);
+                const base = extractFromLines(lines); const cands = [base];
+                lines.forEach((ln, i) => { if (i < lines.length - 1) cands.push(extractFromLines([ln, lines[i + 1]])); });
+                const seen = new Set(); const uniq = cands.filter(c => { const k = `${c.name}|${c.address}|${c.phone}`.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return (c.name || c.address || c.phone); });
+                showOcrCandidates(uniq.slice(0, 8));
                 e.target.value = '';
-            } catch (err) { console.error(err); alert("Erreur OCR."); e.target.value = ''; }
+            } catch (err) { console.error(err); alert('Erreur OCR.'); e.target.value = ''; }
         });
 
-        /* ===== Géocodage ===== */
+        /* ====== Géocoder/Optimiser (optionnel) ====== */
         async function geocodeAll(items) {
             const out = [];
             for (const it of items) {
                 const s = it.address.trim(); if (!s) continue;
                 const m = s.match(/(-?\d+\.?\d*)[,; ]+(-?\d+\.?\d*)/);
                 if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) {
-                    out.push({ id: it.id, index: out.length, name: it.name || '', address: it.address, twStartMin: timeStrToMinHHMM(it.twStart) || null, twEndMin: timeStrToMinHHMM(it.twEnd) || null, lat: +m[1], lon: +m[2], display: it.address });
+                    out.push({
+                        id: it.id, index: out.length, name: it.name || '', address: it.address, phone: it.phone || '',
+                        twStartMin: timeStrToMin(it.twStart) || null, twEndMin: timeStrToMin(it.twEnd) || null, lat: +m[1], lon: +m[2], display: it.address
+                    });
                     continue;
                 }
                 const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(s)}&limit=1&accept-language=fr`;
                 const r = await fetch(url, { headers: { 'Accept': 'application/json' } }); if (!r.ok) throw new Error('Géocodage indisponible');
                 const d = await r.json(); if (!d.length) throw new Error('Adresse introuvable : ' + s);
                 const { lat, lon, display_name } = d[0];
-                out.push({ id: it.id, index: out.length, name: it.name || '', address: it.address, twStartMin: timeStrToMinHHMM(it.twStart) || null, twEndMin: timeStrToMinHHMM(it.twEnd) || null, lat: +lat, lon: +lon, display: display_name });
+                out.push({
+                    id: it.id, index: out.length, name: it.name || '', address: it.address, phone: it.phone || '',
+                    twStartMin: timeStrToMin(it.twStart) || null, twEndMin: timeStrToMin(it.twEnd) || null, lat: +lat, lon: +lon, display: display_name
+                });
                 await new Promise(res => setTimeout(res, 220));
             }
             out.forEach((p, i) => p.index = i); return out;
@@ -328,22 +392,20 @@
         el.geocode.onclick = async () => {
             try {
                 if (raw.length < 2) return alert('Ajoute le dépôt + 1 adresse.');
-                resetAll(false); points = await geocodeAll(raw); group.clearLayers();
-                points.forEach((p, i) => group.addLayer(L.marker([p.lat, p.lon]).bindPopup(`<b>${i === 0 ? 'Dépôt' : ''} ${i}</b><br>${(p.name ? ('<i>' + p.name + '</i><br>') : '')}${(p.display || p.address)}`)));
+                resetMap(); points = await geocodeAll(raw);
+                group.clearLayers();
+                points.forEach((p, i) => group.addLayer(L.marker([p.lat, p.lon]).bindPopup(`<b>${i === 0 ? 'Dépôt' : ''} ${i}</b><br>${(p.name ? ('<i>' + p.name + '</i><br>') : '')}${(p.display || p.address)}${p.phone ? ('<br>☎ ' + p.phone) : ''}`)));
                 fitTo(points);
-                el.optimize.disabled = false; el.draw.disabled = true; el.gmaps.disabled = true; el.gpx.disabled = true; el.pdf.disabled = true; el.nav.disabled = true;
+                el.optimize.disabled = false; el.draw.disabled = true; el.gmaps.disabled = true; el.gpx.disabled = true; el.pdf.disabled = true;
                 viewMode = 'raw'; renderList();
             } catch (e) { alert(e.message || e); }
         };
 
-        /* ===== OSRM table ===== */
-        const osrmTable = async pts => {
+        async function osrmTable(pts) {
             const coords = pts.map(p => `${p.lon},${p.lat}`).join(';');
             const r = await fetch(`https://router.project-osrm.org/table/v1/driving/${coords}?annotations=duration,distance`);
             if (!r.ok) throw new Error('OSRM table indisponible'); return r.json();
-        };
-
-        /* ===== Heuristiques ===== */
+        }
         function nearestNeighbor(d) {
             const n = d.length, used = Array(n).fill(false), path = [0]; used[0] = true;
             for (let k = 1; k < n; k++) { let last = path[path.length - 1], best = -1, c = 1e18; for (let j = 1; j < n; j++) if (!used[j] && d[last][j] < c) { c = d[last][j]; best = j; } path.push(best); used[best] = true; } return path;
@@ -351,7 +413,11 @@
         function twoOpt(path, d) {
             const n = path.length, cost = (a, b) => d[a][b]; let imp = true; while (imp) {
                 imp = false;
-                for (let i = 1; i < n - 2; i++) for (let k = i + 1; k < n - 1; k++) { const a = path[i - 1], b = path[i], c = path[k], e = path[k + 1]; const delta = (cost(a, c) + cost(b, e)) - (cost(a, b) + cost(c, e)); if (delta < -1e-6) { path.splice(i, k - i + 1, ...path.slice(i, k + 1).reverse()); imp = true; } }
+                for (let i = 1; i < n - 2; i++) for (let k = i + 1; k < n - 1; k++) {
+                    const a = path[i - 1], b = path[i], c = path[k], e = path[k + 1];
+                    const delta = (cost(a, c) + cost(b, e)) - (cost(a, b) + cost(c, e));
+                    if (delta < -1e-6) { path.splice(i, k - i + 1, ...path.slice(i, k + 1).reverse()); imp = true; }
+                }
             } return path;
         }
         function greedyTW(dur, pts, startMin, serviceMin) {
@@ -372,42 +438,33 @@
             }
             path.push(0); return { path, eta };
         }
-
-        /* ===== Optimize ===== */
         el.optimize.onclick = async () => {
             try {
                 if (points.length < 2) return;
                 const matrix = await osrmTable(points);
                 const dur = matrix.durations.map(r => r.map(x => (x ?? 1e9) / 60));
                 const hasTW = points.some((p, i) => i > 0 && (p.twStartMin != null || p.twEndMin != null));
-                const startMin = timeStrToMinHHMM(el.startTime.value) || 8 * 60;
+                const startMin = timeStrToMin(el.startTime.value) || 8 * 60;
                 const serviceMin = Math.max(0, parseInt(el.serviceMin.value || '0', 10));
                 stats.startMin = startMin; stats.serviceMin = serviceMin;
-
                 let path, eta, travelMins = 0, travelKm = 0;
                 if (hasTW) { const g = greedyTW(dur, points, startMin, serviceMin); path = g.path; eta = g.eta; }
                 else {
                     path = twoOpt(nearestNeighbor(dur), dur); path.push(0); let t = startMin; eta = Array(dur.length).fill(null);
                     for (let i = 0; i < path.length - 1; i++) { const a = path[i], b = path[i + 1]; t += dur[a][b] + (i > 0 ? serviceMin : 0); eta[b] = t; }
                 }
-
                 for (let i = 0; i < path.length - 1; i++) { travelMins += dur[path[i]][path[i + 1]]; if (matrix.distances) travelKm += (matrix.distances[path[i]][path[i + 1]] || 0) / 1000; }
                 const totalMin = travelMins + Math.max(0, (path.length - 2)) * serviceMin;
                 stats.totalKm = travelKm; stats.totalMin = totalMin; stats.stops = path.length - 2;
-
-                points.forEach((p, i) => p.eta = eta[i]);
-                ordered = path.map(i => points[i]);
-
+                points.forEach((p, i) => p.eta = eta[i]); ordered = path.map(i => points[i]);
                 el.sumTime.textContent = `Durée totale (≈) : ${minsToStr(totalMin)}`;
                 el.sumDist.textContent = `Distance totale : ${travelKm ? travelKm.toFixed(1) + ' km' : '≈ –'}`;
                 if (warningsTW.length) alert("⚠️ Certaines fenêtres horaires sont impossibles (retards minimisés).");
-
-                viewMode = 'ordered'; renderList();
-                el.draw.disabled = false; el.gmaps.disabled = false; el.gpx.disabled = false; el.pdf.disabled = false; el.nav.disabled = true;
-            } catch (e) { console.error(e); alert(e.message || e); }
+                viewMode = 'ordered'; renderList(); el.draw.disabled = false; el.gmaps.disabled = false; el.gpx.disabled = false; el.pdf.disabled = false;
+            } catch (e) { alert(e.message || e); }
         };
 
-        /* ===== Trace route ===== */
+        /* ====== Trace complet (optionnel) ====== */
         el.draw.onclick = async () => {
             try {
                 routeLayer.clearLayers(); if (!ordered.length) return;
@@ -417,12 +474,10 @@
                 const data = await r.json(); const route = data.routes[0];
                 routeGeo = route.geometry; routeLayer.addData(routeGeo);
                 routeCoords = routeGeo.coordinates.map(([lon, lat]) => [lat, lon]); fitTo(ordered);
-                nav.steps = []; route.legs.forEach((leg, li) => leg.steps.forEach(s => nav.steps.push({ ...s, legIndex: li })));
-                el.nav.disabled = nav.steps.length === 0;
             } catch (e) { alert(e.message || e); }
         };
 
-        /* ===== Google Maps ===== */
+        /* ====== Google Maps / GPX ====== */
         el.gmaps.onclick = () => {
             if (!ordered.length) return;
             const pts = ordered.map(p => `${p.lat},${p.lon}`), origin = pts[0], dest = pts[pts.length - 1];
@@ -431,63 +486,6 @@
             const params = new URLSearchParams({ origin, destination: dest, travelmode: 'driving' }); if (way) params.set('waypoints', way);
             window.open(`${base}&${params.toString()}`, '_blank');
         };
-
-        /* ===== PDF (manuel) – header FIX ===== */
-        function buildPdf({ title = "DetourZero — Tournée", includeDelivered = true, endTour = false } = {}) {
-            const { jsPDF } = window.jspdf; const doc = new jsPDF();
-            doc.setFontSize(14); doc.text(title, 14, 14);
-            doc.setFontSize(10);
-            const now = new Date();
-            doc.text(`Date: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}    |    Distance: ${stats.totalKm ? stats.totalKm.toFixed(1) + ' km' : '—'}    |    Durée (≈): ${stats.totalMin ? minsToStr(stats.totalMin) : '—'}    |    Stops: ${stats.stops || Math.max(0, raw.length - 2)}`, 14, 20);
-
-            const head = [['#', 'Client', 'Adresse', 'Fenêtre', 'ETA', 'Livré']]; // LIGNE D'EN-TÊTE
-            const list = (ordered.length ? ordered : points.length ? points : raw.map(r => ({ id: r.id, name: r.name, address: r.address, twStartMin: timeStrToMinHHMM(r.twStart) || null, twEndMin: timeStrToMinHHMM(r.twEnd) || null, eta: null })));
-            const body = list.map((p, idx) => {
-                const base = raw.find(r => r.id === p.id);
-                const delivered = includeDelivered ? (base?.delivered ? (idx === 0 ? '—' : 'Oui') : (idx === 0 ? '—' : 'Non')) : '';
-                const tw = (p.twStartMin != null || p.twEndMin != null) ? `${p.twStartMin != null ? minToHHMM(p.twStartMin) : '..'}–${p.twEndMin != null ? minToHHMM(p.twEndMin) : '..'}` : ((base && (base.twStart || base.twEnd)) ? `${base.twStart || '..'}–${base.twEnd || '..'}` : '');
-                const etaTxt = p.eta != null ? minToHHMM(p.eta) : '';
-                return [String(idx), p.name || (base?.name || ''), p.address || (base?.address || ''), tw, etaTxt, delivered];
-            });
-
-            doc.autoTable({
-                head: head,        // ✅ FIX: on passe la ligne d’en-tête directement
-                body,
-                startY: 26,
-                styles: { fontSize: 9, cellPadding: 2, textColor: [0, 0, 0] },
-                headStyles: { fillColor: [60, 47, 255], textColor: 255 }
-            });
-
-            const deliveredList = raw.filter((r, i) => i > 0 && r.delivered);
-            const pendingList = raw.filter((r, i) => i > 0 && !r.delivered);
-            let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 8 : 28;
-
-            if (endTour) {
-                doc.setFontSize(11); doc.text('Récapitulatif fin de tournée', 14, y); y += 6;
-                doc.setFontSize(10); doc.text(`Livrés: ${deliveredList.length}  |  Non livrés: ${pendingList.length}`, 14, y); y += 6;
-                if (deliveredList.length) {
-                    doc.text('Clients livrés :', 14, y); y += 4; doc.setFontSize(9);
-                    deliveredList.slice(0, 40).forEach((c, i) => doc.text(`• ${c.name ? c.name + ' — ' : ''}${c.address}`, 18, y + 5 * i));
-                    y += 6 + 5 * Math.min(deliveredList.length, 40); doc.setFontSize(10);
-                }
-                if (pendingList.length) {
-                    y += 3; doc.text('Clients non livrés :', 14, y); y += 4; doc.setFontSize(9);
-                    pendingList.slice(0, 40).forEach((c, i) => doc.text(`• ${c.name ? c.name + ' — ' : ''}${c.address}`, 18, y + 5 * i));
-                }
-            }
-            if (warningsTW.length) {
-                let y2 = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 8 : 28;
-                if (endTour) y2 = Math.max(y2, y + 8);
-                doc.setTextColor(200, 0, 0); doc.text('⚠️ Fenêtres horaires potentiellement non respectées :', 14, y2);
-                doc.setTextColor(0, 0, 0);
-                warningsTW.slice(0, 10).forEach((w, i) => doc.text(`- ${w}`, 14, y2 + 6 + 5 * i));
-            }
-            return doc;
-        }
-
-        el.pdf.onclick = () => { try { const d = buildPdf({ title: 'DetourZero — Tournée optimisée', includeDelivered: true, endTour: false }); d.save('detourzero-tournee.pdf'); } catch (e) { console.error(e); alert('Erreur PDF'); } };
-
-        /* ===== GPX ===== */
         el.gpx.onclick = () => {
             if (!ordered.length) return;
             const coords = routeGeo ? routeGeo.coordinates.map(([lon, lat]) => ({ lat, lon })) : ordered;
@@ -495,74 +493,200 @@
             const blob = new Blob([gpx], { type: 'application/gpx+xml' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'detourzero.gpx'; a.click(); URL.revokeObjectURL(a.href);
         };
 
-        /* ===== Navigation “GPS” ===== */
-        let nav = { steps: [], stepIndex: 0, watchId: null, active: false, startEpoch: null, offCount: 0 };
-        const toRad = x => x * Math.PI / 180;
-        const lonLatToXY = (lon, lat) => { const R = 6378137; return [R * toRad(lon), R * Math.log(Math.tan(Math.PI / 4 + toRad(lat) / 2))]; };
-        const distXY = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-        function pointSegDistMeters(lat, lon, A, B) { const P = lonLatToXY(lon, lat), Axy = lonLatToXY(A[1], A[0]), Bxy = lonLatToXY(B[1], B[0]); const AB = [Bxy[0] - Axy[0], Bxy[1] - Axy[1]], AP = [P[0] - Axy[0], P[1] - Axy[1]], ab2 = AB[0] * AB[0] + AB[1] * AB[1]; const t = ab2 ? Math.max(0, Math.min(1, (AP[0] * AB[0] + AP[1] * AB[1]) / ab2)) : 0; const H = [Axy[0] + AB[0] * t, Axy[1] + AB[1] * t]; return distXY(P, H); }
+        /* ====== PDF (inclut signatures) ====== */
+        function buildPdf({ title = "DetourZero — Tournée", endTour = false } = {}) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setFontSize(14); doc.text(title, 14, 14);
+            doc.setFontSize(10); const now = new Date();
+            doc.text(`Date: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}    |    Distance: ${stats.totalKm ? stats.totalKm.toFixed(1) + ' km' : '—'}    |    Durée (≈): ${stats.totalMin ? minsToStr(stats.totalMin) : '—'}    |    Stops: ${stats.stops || Math.max(0, raw.length - 2)}`, 14, 20);
+            const head = [['#', 'Client', 'Adresse', 'Téléphone', 'Fenêtre', 'ETA', 'Livré']];
+            const list = (ordered.length ? ordered : points.length ? points : raw.map(r => ({ id: r.id, name: r.name, address: r.address, phone: r.phone, twStartMin: timeStrToMin(r.twStart) || null, twEndMin: timeStrToMin(r.twEnd) || null, eta: null })));
+            const body = list.map((p, idx) => {
+                const base = raw.find(r => r.id === p.id) || {};
+                const delivered = base.delivered ? (idx === 0 ? '—' : 'Oui') : (idx === 0 ? '—' : 'Non');
+                const tw = (p.twStartMin != null || p.twEndMin != null) ? `${p.twStartMin != null ? minToHHMM(p.twStartMin) : '..'}–${p.twEndMin != null ? minToHHMM(p.twEndMin) : '..'}` : ((base.twStart || base.twEnd) ? `${base.twStart || '..'}–${base.twEnd || '..'}` : '');
+                const eta = p.eta != null ? minToHHMM(p.eta) : '';
+                return [String(idx), p.name || (base.name || ''), p.address || (base.address || ''), p.phone || (base.phone || ''), tw, eta, delivered];
+            });
+            doc.autoTable({ head: head, body, startY: 26, styles: { fontSize: 9, cellPadding: 2, textColor: [0, 0, 0] }, headStyles: { fillColor: [60, 47, 255], textColor: 255 } });
+            if (endTour) {
+                const deliveredList = raw.filter((r, i) => i > 0 && r.delivered);
+                const pendingList = raw.filter((r, i) => i > 0 && !r.delivered);
+                let y = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 8 : 28;
+                doc.setFontSize(11); doc.text('Récapitulatif fin de tournée', 14, y); y += 6;
+                doc.setFontSize(10); doc.text(`Livrés: ${deliveredList.length}  |  Non livrés: ${pendingList.length}`, 14, y); y += 8;
+                if (deliveredList.some(c => c.signData)) {
+                    doc.setFontSize(11); doc.text('Signatures clients (miniatures) :', 14, y); y += 6;
+                    const marginX = 14, cellW = 45, cellH = 25, gap = 6; let x = marginX, rowH = cellH + gap;
+                    deliveredList.forEach(c => { if (c.signData) { try { doc.addImage(c.signData, 'PNG', x, y, cellW, cellH); } catch { } doc.setFontSize(8); doc.text((c.name || ''), x, y + cellH + 4); x += cellW + gap; if (x + cellW > 200) { x = marginX; y += rowH + 8; } } });
+                    y += rowH + 8;
+                }
+                if (pendingList.length) { doc.setFontSize(10); doc.text('Clients non livrés :', 14, y); y += 5; doc.setFontSize(9); pendingList.slice(0, 60).forEach((c, i) => doc.text(`• ${c.name ? c.name + ' — ' : ''}${c.address}`, 18, y + 5 * i)); }
+                if (warningsTW.length) { let y2 = Math.max(y + 8, (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 8 : 28); doc.setTextColor(200, 0, 0); doc.text('⚠️ Fenêtres horaires potentiellement non respectées :', 14, y2); doc.setTextColor(0, 0, 0); warningsTW.slice(0, 10).forEach((w, i) => doc.text(`- ${w}`, 14, y2 + 6 + 5 * i)); }
+            }
+            return doc;
+        }
+        el.pdf.onclick = () => { try { const d = buildPdf({ title: 'DetourZero — Tournée optimisée', endTour: false }); d.save('detourzero-tournee.pdf'); } catch (e) { console.error(e); alert('Erreur PDF'); } };
+
+        /* ====== Navigation “client par client” ====== */
+        let nav = { steps: [], stepIndex: 0, watchId: null, active: false, offCount: 0 };
+        function toRad(x) { return x * Math.PI / 180; }
+        function lonLatToXY(lon, lat) { const R = 6378137; return [R * toRad(lon), R * Math.log(Math.tan(Math.PI / 4 + toRad(lat) / 2))]; }
+        function distXY(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
+        function pointSegDistMeters(lat, lon, A, B) { const P = lonLatToXY(lon, lat), Axy = lonLatToXY(A[1], A[0]), Bxy = lonLatToXY(B[1], B[0]); const AB = [Bxy[0] - Axy[0], Bxy[1] - Axy[1]], AP = [P[0] - Axy[0], P[1] - Axy[1]]; const ab2 = AB[0] * AB[0] + AB[1] * AB[1]; const t = ab2 ? Math.max(0, Math.min(1, (AP[0] * AB[0] + AP[1] * AB[1]) / ab2)) : 0; const H = [Axy[0] + AB[0] * t, Axy[1] + AB[1] * t]; return distXY(P, H); }
         function minDistPointToRoute(lat, lon, line) { let best = Infinity; for (let i = 0; i < line.length - 1; i++) { const d = pointSegDistMeters(lat, lon, line[i], line[i + 1]); if (d < best) best = d; } return best; }
         const fmtDist = m => m == null ? '—' : (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
         const minsToStr2 = s => { const m = Math.round(s / 60); const h = Math.floor(m / 60), mm = m % 60; return h ? `${h} h ${String(mm).padStart(2, '0')} min` : `${mm} min`; };
-        const speak = t => { try { const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR'; u.rate = 1; u.pitch = 1; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch { } };
+        const speak = t => { try { const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch { } };
         function maneuverToText(step) { const m = step.maneuver || {}; const dirMap = { left: 'à gauche', right: 'à droite', straight: 'tout droit', slight_left: 'légèrement à gauche', slight_right: 'légèrement à droite', uturn: 'demi-tour' }; const dir = dirMap[m.modifier] || ''; const typeMap = { roundabout: 'le rond-point', merge: 'la bretelle', on_ramp: 'la bretelle', off_ramp: 'la sortie' }; const type = typeMap[m.type] || ''; let base = step.name ? ` sur ${step.name}` : ''; if (m.type === 'arrive') return 'Arrivée à destination'; if (dir) return `Tournez ${dir}${base}`.trim(); if (type) return `Prenez ${type}${base}`.trim(); return step.ref ? `Suivez ${step.ref}` : (step.name ? `Suivez ${step.name}` : 'Continuez'); }
-        function showNav(st) { if (!st) { el.navManeuver.textContent = 'Navigation'; el.navDetail.textContent = ''; el.navDist.textContent = '—'; return; } el.navManeuver.textContent = maneuverToText(st); el.navDetail.textContent = `${fmtDist(st.distance)} · ${minsToStr2(st.duration)}`; el.navDist.textContent = fmtDist(st.distance); el.navEta.textContent = ''; }
+        function showNav(step) { if (!step) { el.navManeuver.textContent = 'Navigation'; el.navDetail.textContent = ''; el.navDist.textContent = '—'; return; } el.navManeuver.textContent = maneuverToText(step); el.navDetail.textContent = `${fmtDist(step.distance)} · ${minsToStr2(step.duration)}`; el.navDist.textContent = fmtDist(step.distance); el.navEta.textContent = ''; }
         function updatePosition(pos) {
-            const { latitude, longitude, accuracy } = pos.coords, ll = [latitude, longitude];
-            if (!meMarker) { meMarker = L.circleMarker(ll, { radius: 7, color: '#4cc3ff', weight: 3, opacity: .9, fill: true, fillOpacity: .7 }).addTo(map); meAccuracy = L.circle(ll, { radius: accuracy || 15, color: '#4cc3ff', weight: 1, opacity: .2, fillOpacity: .06 }).addTo(map); }
-            else { meMarker.setLatLng(ll); meAccuracy.setLatLng(ll).setRadius(accuracy || 15); }
+            const { latitude, longitude, accuracy, heading } = pos.coords;
+            if (typeof heading === 'number' && !Number.isNaN(heading)) headingDeg = heading;
+            const ll = [latitude, longitude];
+            if (!meMarker) { meMarker = L.marker(ll, { icon: arrowIcon(headingDeg) }).addTo(map); meAccuracy = L.circle(ll, { radius: accuracy || 15, color: '#6b3cff', weight: 1, opacity: 0.2, fillOpacity: 0.06 }).addTo(map); }
+            else { meMarker.setLatLng(ll); meMarker.setIcon(arrowIcon(headingDeg)); meAccuracy.setLatLng(ll).setRadius(accuracy || 15); }
             if (followOn) map.setView(ll, Math.max(map.getZoom(), 16), { animate: true });
             if (!nav.active) return;
-            const st = nav.steps[nav.stepIndex]; if (st) { const tgt = [st.maneuver.location[1], st.maneuver.location[0]]; const d = pointSegDistMeters(latitude, longitude, ll, tgt); if (d < 30) { nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1); const ns = nav.steps[nav.stepIndex]; showNav(ns); speak(maneuverToText(ns)); } }
+            const st = nav.steps[nav.stepIndex];
+            if (st) { const tgt = [st.maneuver.location[1], st.maneuver.location[0]]; const d = pointSegDistMeters(latitude, longitude, ll, tgt); if (d < 30) { nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1); const ns = nav.steps[nav.stepIndex]; showNav(ns); speak(maneuverToText(ns)); } }
             if (routeCoords.length > 1) { const off = minDistPointToRoute(latitude, longitude, routeCoords); if (off > 120) { nav.offCount++; if (nav.offCount >= 2) { nav.offCount = 0; recalcFromHere(latitude, longitude).catch(console.error); } } else nav.offCount = 0; }
         }
         async function recalcFromHere(lat, lon) {
-            if (!ordered.length) return; const remain = ordered.slice(1);
-            const coords = [`${lon},${lat}`].concat(remain.map(p => `${p.lon},${p.lat}`)).join(';');
-            const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&annotations=distance,duration`);
-            if (!r.ok) throw new Error('OSRM recalcul indisponible'); const d = await r.json(); const route = d.routes[0];
-            routeLayer.clearLayers(); routeGeo = route.geometry; routeLayer.addData(routeGeo); routeCoords = routeGeo.coordinates.map(([lo, la]) => [la, lo]);
-            nav.steps = []; route.legs.forEach((leg, li) => leg.steps.forEach(s => nav.steps.push({ ...s, legIndex: li }))); nav.stepIndex = 0; showNav(nav.steps[0]); speak('Itinéraire recalculé. ' + maneuverToText(nav.steps[0]));
+            if (!routeCoords.length) return;
+            const dest = routeCoords[routeCoords.length - 1];
+            const coords = `${lon},${lat};${dest[1]},${dest[0]}`;
+            const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`);
+            if (!r.ok) return;
+            const data = await r.json(); const route = data.routes[0];
+            routeLayer.clearLayers(); routeGeo = route.geometry; routeLayer.addData(routeGeo);
+            routeCoords = routeGeo.coordinates.map(([lo, la]) => [la, lo]);
+            nav.steps = []; route.legs.forEach((leg, li) => leg.steps.forEach(s => nav.steps.push({ ...s, legIndex: li })));
+            nav.stepIndex = 0; showNav(nav.steps[0]); speak('Itinéraire recalculé. ' + maneuverToText(nav.steps[0]));
         }
-        function startNav() {
-            if (!nav.steps.length) return alert("Trace d'abord l'itinéraire."); nav.active = true; nav.stepIndex = 0; nav.startEpoch = Date.now(); nav.offCount = 0; el.navHud.style.display = 'block';
+        function startNavWithRoute(route) {
+            routeLayer.clearLayers(); routeGeo = route.geometry; routeLayer.addData(routeGeo);
+            routeCoords = routeGeo.coordinates.map(([lon, lat]) => [lat, lon]);
+            nav.steps = []; route.legs.forEach((leg, li) => leg.steps.forEach(s => nav.steps.push({ ...s, legIndex: li })));
+            nav.active = true; nav.stepIndex = 0; nav.offCount = 0; el.navHud.style.display = 'block';
             const st = nav.steps[0]; showNav(st); speak('Navigation démarrée. ' + maneuverToText(st));
-            try {
-                if (navigator.geolocation) {
-                    if (nav.watchId != null) navigator.geolocation.clearWatch(nav.watchId);
-                    nav.watchId = navigator.geolocation.watchPosition(updatePosition, console.warn, { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 });
-                }
-            } catch { }
         }
         function stopNav() { nav.active = false; if (nav.watchId != null) { navigator.geolocation.clearWatch(nav.watchId); nav.watchId = null; } el.navHud.style.display = 'none'; window.speechSynthesis?.cancel?.(); }
-        el.nav.onclick = () => startNav(); el.navStop.onclick = () => stopNav();
-        el.navNext.onclick = () => { if (!nav.steps.length) return; nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1); const st = nav.steps[nav.stepIndex]; showNav(st); speak(maneuverToText(st)); };
         el.navPrev.onclick = () => { if (!nav.steps.length) return; nav.stepIndex = Math.max(nav.stepIndex - 1, 0); const st = nav.steps[nav.stepIndex]; showNav(st); speak(maneuverToText(st)); };
+        el.navNext.onclick = () => { if (!nav.steps.length) return; nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1); const st = nav.steps[nav.stepIndex]; showNav(st); speak(maneuverToText(st)); };
+        el.navStop.onclick = () => stopNav();
         el.follow.onclick = () => { followOn = !followOn; el.follow.textContent = followOn ? '📌 Suivi carte: ON' : '📌 Suivi carte: OFF'; };
 
-        /* ===== Reset & Fin de tournée ===== */
-        function resetAll(clear = true) {
-            points = []; ordered = []; routeGeo = null; routeCoords = []; resetMap();
-            el.optimize.disabled = true; el.draw.disabled = true; el.gmaps.disabled = true; el.gpx.disabled = true; el.pdf.disabled = true; el.nav.disabled = true;
-            el.sumDist.textContent = 'Distance totale : –'; el.sumTime.textContent = 'Durée totale (≈) : –';
-            if (clear) { viewMode = 'raw'; renderList(); } el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none'; stopNav();
-        }
-        el.reset.onclick = () => resetAll(false);
+        // Watch position (flèche qui bouge)
+        try { if (navigator.geolocation) { nav.watchId = navigator.geolocation.watchPosition(updatePosition, console.warn, { enableHighAccuracy: true, maximumAge: 3000, timeout: 8000 }); } } catch { }
 
-        function endTour() {
-            try {
-                const doc = buildPdf({ title: 'DetourZero — Fin de tournée', includeDelivered: true, endTour: true });
-                doc.save(`detourzero-fin-de-tournee-${new Date().toISOString().slice(0, 10)}.pdf`);
-            } catch (err) { console.error(err); alert('Erreur génération PDF fin de tournée'); }
-            if (confirm("Confirmer la fin de tournée ? Cela efface la liste et l'état 'livré'.")) {
-                localStorage.removeItem(LS_KEY); raw = []; viewMode = 'raw'; saveState(); resetAll(true);
+        /* ====== Fallback origine si GPS refusé ====== */
+        async function pickOriginFallback() {
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                    () => {
+                        const useDepot = points[0] && confirm(
+                            "Géolocalisation indisponible.\n\nUtiliser le DÉPÔT comme position de départ ?\n\n(Annuler = je clique sur la carte pour pointer ma position.)"
+                        );
+                        if (useDepot) resolve({ lat: points[0].lat, lon: points[0].lon });
+                        else {
+                            alert("Clique une fois sur la CARTE pour définir ta position.");
+                            const once = (e) => { map.off('click', once); resolve({ lat: e.latlng.lat, lon: e.latlng.lng }); };
+                            map.once('click', once);
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 1000 }
+                );
+            });
+        }
+
+        /* ====== FICHE CLIENT (actions) & NAV SINGLE ====== */
+        let actionTargetId = null;
+        function openClientModal(id) {
+            const it = raw.find(r => r.id === id); if (!it) return;
+            actionTargetId = id;
+            el.clientModalTitle.textContent = it.name || 'Client';
+            el.clientSummary.innerHTML = `<b>${it.name || '—'}</b><br>${it.address || '—'}${it.phone ? ('<br>☎ ' + it.phone) : ''}${(it.twStart || it.twEnd) ? ('<br>🕒 ' + (it.twStart || '..') + '–' + (it.twEnd || '..')) : ''}${it.delivered ? '<br><span class="mini">✅ Déjà livré</span>' : ''}`;
+            el.clientModal.style.display = 'block';
+        }
+        function closeClientModal() { el.clientModal.style.display = 'none'; actionTargetId = null; }
+        el.clientModalClose.onclick = () => closeClientModal();
+        el.clientModal.querySelector('.modal-backdrop').onclick = () => closeClientModal();
+
+        el.actCall.onclick = () => {
+            const it = raw.find(r => r.id === actionTargetId); if (!it || !it.phone) return alert("Aucun numéro disponible.");
+            window.location.href = `tel:${it.phone.replace(/\s/g, '')}`;
+        };
+        el.actSign.onclick = () => {
+            const id = actionTargetId; closeClientModal(); openSignatureModal(id);
+        };
+        el.actNavigate.onclick = async () => {
+            const it = raw.find(r => r.id === actionTargetId); if (!it) return;
+            async function geocodeOne(addr) {
+                const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(addr)}&limit=1&accept-language=fr`;
+                const r = await fetch(url); if (!r.ok) throw new Error('Géocodage indisponible');
+                const d = await r.json(); if (!d.length) throw new Error('Adresse introuvable'); return { lat: +d[0].lat, lon: +d[0].lon };
             }
+            try {
+                closeClientModal();
+                const destPoint = (points.find(p => p.id === it.id) ? { lat: points.find(p => p.id === it.id).lat, lon: points.find(p => p.id === it.id).lon } : await geocodeOne(it.address));
+                const origin = await pickOriginFallback(); // {lat, lon}
+                const coords = `${origin.lon},${origin.lat};${destPoint.lon},${destPoint.lat}`;
+                const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`);
+                if (!r.ok) return alert('OSRM route indisponible');
+                const data = await r.json(); startNavWithRoute(data.routes[0]);
+            } catch (e) { alert(e.message || e); }
+        };
+
+        /* ====== Signature ====== */
+        let sigTargetId = null;
+        const sig = { drawing: false, empty: true, last: [0, 0], ctx: null };
+        sig.ctx = (function () { const ctx = el.sigCanvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, el.sigCanvas.width, el.sigCanvas.height); ctx.strokeStyle = '#111'; ctx.lineWidth = 2.2; return ctx; })();
+        function openSignatureModal(clientId) {
+            const it = raw.find(r => r.id === clientId);
+            if (!it) return;
+            sigTargetId = clientId;
+            el.sigInfo.textContent = `${it.name || '(Sans nom)'} — ${it.address}`;
+            sig.ctx.fillStyle = '#fff'; sig.ctx.fillRect(0, 0, el.sigCanvas.width, el.sigCanvas.height);
+            sig.ctx.strokeStyle = '#111'; sig.ctx.lineWidth = 2.2; sig.empty = true;
+            if (it.signData) { const img = new Image(); img.onload = () => sig.ctx.drawImage(img, 0, 0, el.sigCanvas.width, el.sigCanvas.height); img.src = it.signData; }
+            el.sigModal.style.display = 'block';
+        }
+        function closeSignatureModal() { el.sigModal.style.display = 'none'; sigTargetId = null; }
+        function canvasCoords(e) { const rect = el.sigCanvas.getBoundingClientRect(); const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left; const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top; return [x, y]; }
+        function startDraw(e) { e.preventDefault(); sig.drawing = true; sig.last = canvasCoords(e); }
+        function moveDraw(e) { if (!sig.drawing) return; const [x, y] = canvasCoords(e); sig.ctx.beginPath(); sig.ctx.moveTo(sig.last[0], sig.last[1]); sig.ctx.lineTo(x, y); sig.ctx.stroke(); sig.last = [x, y]; sig.empty = false; }
+        function endDraw() { sig.drawing = false; }
+        el.sigCanvas.addEventListener('mousedown', startDraw); el.sigCanvas.addEventListener('mousemove', moveDraw); window.addEventListener('mouseup', endDraw);
+        el.sigCanvas.addEventListener('touchstart', startDraw, { passive: false }); el.sigCanvas.addEventListener('touchmove', moveDraw, { passive: false }); el.sigCanvas.addEventListener('touchend', endDraw);
+        el.sigClear.onclick = () => { sig.ctx.fillStyle = '#fff'; sig.ctx.fillRect(0, 0, el.sigCanvas.width, el.sigCanvas.height); sig.ctx.strokeStyle = '#111'; sig.ctx.lineWidth = 2.2; sig.empty = true; };
+        el.sigValidate.onclick = () => {
+            if (sig.empty) return alert('Signature requise.');
+            const data = el.sigCanvas.toDataURL('image/png');
+            const it = raw.find(r => r.id === sigTargetId);
+            if (it) { it.signData = data; it.signTimeISO = new Date().toISOString(); it.delivered = true; saveState(); renderList(); closeSignatureModal(); }
+        };
+        el.sigClose.onclick = () => closeSignatureModal();
+        el.sigModal.querySelector('.modal-backdrop').onclick = () => closeSignatureModal();
+
+        /* ====== Reset & Fin de tournée ====== */
+        function resetAll() {
+            points = []; ordered = []; routeGeo = null; routeCoords = []; resetMap();
+            el.optimize.disabled = true; el.draw.disabled = true; el.gmaps.disabled = true; el.gpx.disabled = true; el.pdf.disabled = true;
+            el.sumDist.textContent = 'Distance totale : –'; el.sumTime.textContent = 'Durée totale (≈) : –';
+            viewMode = 'raw'; renderList(); el.ocrBox.style.display = 'none'; el.ocrAlt.style.display = 'none'; stopNav();
+        }
+        el.reset.onclick = () => resetAll();
+        function endTour() {
+            try { const doc = buildPdf({ title: 'DetourZero — Fin de tournée', endTour: true }); doc.save(`detourzero-fin-de-tournee-${new Date().toISOString().slice(0, 10)}.pdf`); } catch (e) { console.error(e); alert('Erreur génération PDF fin de tournée'); }
+            if (confirm("Confirmer la fin de tournée ? Cela efface la liste, signatures et états.")) { localStorage.removeItem(LS_KEY); raw = []; saveState(); resetAll(); }
         }
         el.endTour.onclick = () => endTour();
 
-        /* ===== Init ===== */
+        /* ====== Init ====== */
         renderList(); updateCounter();
-        try { if (navigator.geolocation) { navigator.geolocation.watchPosition(updatePosition, console.warn, { enableHighAccuracy: true, maximumAge: 3000, timeout: 8000 }); } } catch { }
     </script>
 </body>
 
