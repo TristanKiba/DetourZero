@@ -22,7 +22,7 @@
     <header>
         <div class="logo"></div>
         <h1>DetourZero — Optimiseur de tournée</h1>
-        <span class="tag">100% client-side - OSRM - Nominatim</span>
+        <span class="tag">100% client-side · OSRM · Nominatim</span>
     </header>
 
     <main class="wrap">
@@ -44,7 +44,7 @@
                     <input id="fileCam" type="file" accept="image/*" capture="environment" style="display:none" />
                 </div>
 
-                <!-- Proposition OCR sous les champs -->
+                <!-- OCR sous champs -->
                 <div id="ocrBox" class="ocr-inline" style="display:none;">
                     <div class="card ocr-card-inline">
                         <div class="txt" id="ocrText"></div>
@@ -73,14 +73,12 @@
                     <button class="btn ghost" id="clear">Vider (liste)</button>
                 </div>
 
-                <div class="muted">
-                    Jusqu'à <b>150 adresses</b>.
-                </div>
+                <div class="muted">Jusqu'à <b>150 adresses</b>.</div>
             </div>
 
             <div class="row hstack">
-                <button class="btn" id="geocode">1) Géocoder (liste)</button>
-                <button class="btn primary" id="optimize" disabled>2) Optimiser (ordre)</button>
+                <button class="btn" id="geocode">1) Géocoder </button>
+                <button class="btn primary" id="optimize" disabled>2) Optimiser </button>
                 <button class="btn accent" id="draw" disabled>3) Tracer l’itinéraire complet</button>
             </div>
 
@@ -364,7 +362,7 @@
             } catch (err) { console.error(err); alert('Erreur OCR.'); e.target.value = ''; }
         });
 
-        /* ====== Géocoder/Optimiser (optionnel) ====== */
+        /* ====== Géocoder/Optimiser ====== */
         async function geocodeAll(items) {
             const out = [];
             for (const it of items) {
@@ -529,8 +527,8 @@
         }
         el.pdf.onclick = () => { try { const d = buildPdf({ title: 'DetourZero — Tournée optimisée', endTour: false }); d.save('detourzero-tournee.pdf'); } catch (e) { console.error(e); alert('Erreur PDF'); } };
 
-        /* ====== Navigation “client par client” ====== */
-        let nav = { steps: [], stepIndex: 0, watchId: null, active: false, offCount: 0 };
+        /* ====== Navigation “client par client” + anti-rafale ====== */
+        let nav = { steps: [], stepIndex: 0, watchId: null, active: false, offCount: 0, lastPos: null, lastAdvance: 0, lastSpeak: 0 };
         function toRad(x) { return x * Math.PI / 180; }
         function lonLatToXY(lon, lat) { const R = 6378137; return [R * toRad(lon), R * Math.log(Math.tan(Math.PI / 4 + toRad(lat) / 2))]; }
         function distXY(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
@@ -540,19 +538,96 @@
         const minsToStr2 = s => { const m = Math.round(s / 60); const h = Math.floor(m / 60), mm = m % 60; return h ? `${h} h ${String(mm).padStart(2, '0')} min` : `${mm} min`; };
         const speak = t => { try { const u = new SpeechSynthesisUtterance(t); u.lang = 'fr-FR'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch { } };
         function maneuverToText(step) { const m = step.maneuver || {}; const dirMap = { left: 'à gauche', right: 'à droite', straight: 'tout droit', slight_left: 'légèrement à gauche', slight_right: 'légèrement à droite', uturn: 'demi-tour' }; const dir = dirMap[m.modifier] || ''; const typeMap = { roundabout: 'le rond-point', merge: 'la bretelle', on_ramp: 'la bretelle', off_ramp: 'la sortie' }; const type = typeMap[m.type] || ''; let base = step.name ? ` sur ${step.name}` : ''; if (m.type === 'arrive') return 'Arrivée à destination'; if (dir) return `Tournez ${dir}${base}`.trim(); if (type) return `Prenez ${type}${base}`.trim(); return step.ref ? `Suivez ${step.ref}` : (step.name ? `Suivez ${step.name}` : 'Continuez'); }
-        function showNav(step) { if (!step) { el.navManeuver.textContent = 'Navigation'; el.navDetail.textContent = ''; el.navDist.textContent = '—'; return; } el.navManeuver.textContent = maneuverToText(step); el.navDetail.textContent = `${fmtDist(step.distance)} · ${minsToStr2(step.duration)}`; el.navDist.textContent = fmtDist(step.distance); el.navEta.textContent = ''; }
+
+        function startNavWithRoute(route) {
+            routeLayer.clearLayers(); routeGeo = route.geometry; routeLayer.addData(routeGeo);
+            routeCoords = routeGeo.coordinates.map(([lon, lat]) => [lat, lon]);
+
+            // Filtrer micro-étapes (anti-rafale)
+            const steps = [];
+            route.legs.forEach((leg, li) => {
+                leg.steps.forEach(s => {
+                    if ((s.distance || 0) > 15 && (s.duration || 0) > 3) {
+                        steps.push({ ...s, legIndex: li });
+                    }
+                });
+            });
+            nav.steps = steps;
+            nav.active = true;
+            nav.stepIndex = 0;
+            nav.offCount = 0;
+            nav.lastPos = null; nav.lastAdvance = 0; nav.lastSpeak = 0;
+
+            el.navHud.style.display = 'block';
+            const st = nav.steps[0];
+            showNav(st);
+            speak('Navigation démarrée.');
+        }
+
+        function showNav(step) {
+            if (!step) { el.navManeuver.textContent = 'Navigation'; el.navDetail.textContent = ''; el.navDist.textContent = '—'; return; }
+            el.navManeuver.textContent = maneuverToText(step);
+            el.navDetail.textContent = `${fmtDist(step.distance)} · ${minsToStr2(step.duration)}`;
+            el.navDist.textContent = fmtDist(step.distance);
+            el.navEta.textContent = '';
+        }
+
         function updatePosition(pos) {
             const { latitude, longitude, accuracy, heading } = pos.coords;
             if (typeof heading === 'number' && !Number.isNaN(heading)) headingDeg = heading;
             const ll = [latitude, longitude];
-            if (!meMarker) { meMarker = L.marker(ll, { icon: arrowIcon(headingDeg) }).addTo(map); meAccuracy = L.circle(ll, { radius: accuracy || 15, color: '#6b3cff', weight: 1, opacity: 0.2, fillOpacity: 0.06 }).addTo(map); }
-            else { meMarker.setLatLng(ll); meMarker.setIcon(arrowIcon(headingDeg)); meAccuracy.setLatLng(ll).setRadius(accuracy || 15); }
+
+            // Mise à jour du marqueur
+            if (!meMarker) {
+                meMarker = L.marker(ll, { icon: arrowIcon(headingDeg) }).addTo(map);
+                meAccuracy = L.circle(ll, { radius: accuracy || 15, color: '#6b3cff', weight: 1, opacity: 0.2, fillOpacity: 0.06 }).addTo(map);
+            } else {
+                meMarker.setLatLng(ll);
+                meMarker.setIcon(arrowIcon(headingDeg));
+                meAccuracy.setLatLng(ll).setRadius(accuracy || 15);
+            }
             if (followOn) map.setView(ll, Math.max(map.getZoom(), 16), { animate: true });
-            if (!nav.active) return;
+
+            // Anti-rafale : attendre un vrai mouvement
+            const now = performance.now();
+            if (!nav.lastPos) { nav.lastPos = ll; return; }
+            const moved = L.latLng(nav.lastPos[0], nav.lastPos[1]).distanceTo(L.latLng(ll[0], ll[1]));
+            if (moved < 6) return; // pas de déplacement significatif
+            nav.lastPos = ll;
+
+            if (!nav.active || !nav.steps.length) return;
+
             const st = nav.steps[nav.stepIndex];
-            if (st) { const tgt = [st.maneuver.location[1], st.maneuver.location[0]]; const d = pointSegDistMeters(latitude, longitude, ll, tgt); if (d < 30) { nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1); const ns = nav.steps[nav.stepIndex]; showNav(ns); speak(maneuverToText(ns)); } }
-            if (routeCoords.length > 1) { const off = minDistPointToRoute(latitude, longitude, routeCoords); if (off > 120) { nav.offCount++; if (nav.offCount >= 2) { nav.offCount = 0; recalcFromHere(latitude, longitude).catch(console.error); } } else nav.offCount = 0; }
+            if (st) {
+                const tgt = [st.maneuver.location[1], st.maneuver.location[0]];
+                const d = pointSegDistMeters(latitude, longitude, ll, tgt);
+
+                const canAdvance = d < 30 && (now - nav.lastAdvance) > 1500;
+                if (canAdvance) {
+                    nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1);
+                    nav.lastAdvance = now;
+                }
+
+                const cur = nav.steps[nav.stepIndex];
+                showNav(cur);
+
+                // throttle voix ≥ 3.5 s
+                if ((now - nav.lastSpeak) > 3500) {
+                    speak(maneuverToText(cur));
+                    nav.lastSpeak = now;
+                }
+            }
+
+            // Off-route (freiné)
+            if (routeCoords.length > 1) {
+                const off = minDistPointToRoute(latitude, longitude, routeCoords);
+                if (off > 120) {
+                    nav.offCount++;
+                    if (nav.offCount >= 2) { nav.offCount = 0; recalcFromHere(latitude, longitude).catch(console.error); }
+                } else nav.offCount = 0;
+            }
         }
+
         async function recalcFromHere(lat, lon) {
             if (!routeCoords.length) return;
             const dest = routeCoords[routeCoords.length - 1];
@@ -565,13 +640,7 @@
             nav.steps = []; route.legs.forEach((leg, li) => leg.steps.forEach(s => nav.steps.push({ ...s, legIndex: li })));
             nav.stepIndex = 0; showNav(nav.steps[0]); speak('Itinéraire recalculé. ' + maneuverToText(nav.steps[0]));
         }
-        function startNavWithRoute(route) {
-            routeLayer.clearLayers(); routeGeo = route.geometry; routeLayer.addData(routeGeo);
-            routeCoords = routeGeo.coordinates.map(([lon, lat]) => [lat, lon]);
-            nav.steps = []; route.legs.forEach((leg, li) => leg.steps.forEach(s => nav.steps.push({ ...s, legIndex: li })));
-            nav.active = true; nav.stepIndex = 0; nav.offCount = 0; el.navHud.style.display = 'block';
-            const st = nav.steps[0]; showNav(st); speak('Navigation démarrée. ' + maneuverToText(st));
-        }
+
         function stopNav() { nav.active = false; if (nav.watchId != null) { navigator.geolocation.clearWatch(nav.watchId); nav.watchId = null; } el.navHud.style.display = 'none'; window.speechSynthesis?.cancel?.(); }
         el.navPrev.onclick = () => { if (!nav.steps.length) return; nav.stepIndex = Math.max(nav.stepIndex - 1, 0); const st = nav.steps[nav.stepIndex]; showNav(st); speak(maneuverToText(st)); };
         el.navNext.onclick = () => { if (!nav.steps.length) return; nav.stepIndex = Math.min(nav.stepIndex + 1, nav.steps.length - 1); const st = nav.steps[nav.stepIndex]; showNav(st); speak(maneuverToText(st)); };
